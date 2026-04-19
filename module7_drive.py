@@ -107,6 +107,7 @@ class SyncResult:
     duration_sec: float = 0.0
     error: str = ""
     files_transferred: int = 0
+    drive_public_url: str = ""   # public viewable URL after set_public_link()
 
 
 # ---------------------------------------------------------------------------
@@ -307,6 +308,8 @@ class DriveManager:
                     "Drive sync OK: %s → %s (%.1fs)",
                     local_path.name, remote, duration,
                 )
+                # Get public link for gallery
+                public_url = self.get_public_link(remote)
                 return SyncResult(
                     success=True,
                     drive_name=drive.name,
@@ -314,6 +317,7 @@ class DriveManager:
                     local_path=str(local_path),
                     duration_sec=duration,
                     files_transferred=1,
+                    drive_public_url=public_url,
                 )
             else:
                 err = result.stderr.strip() or result.stdout.strip()
@@ -661,6 +665,55 @@ class DriveManager:
             proc.stdout = ""
             proc.stderr = f"Timeout after {RCLONE_TIMEOUT_SEC}s"
             return proc
+
+    # ------------------------------------------------------------------
+    # Public API — Drive public link
+    # ------------------------------------------------------------------
+
+    def get_public_link(self, remote_path: str) -> str:
+        """
+        Make a Drive file publicly readable and return its direct image URL.
+
+        Uses rclone link to get a shareable URL, then converts to direct
+        download format for use in <img src="">.
+
+        Parameters
+        ----------
+        remote_path : full rclone remote path e.g. "gdrive1:screenshots/US/AAPL/2026-04/AAPL_2026-04-19_13-35.png"
+
+        Returns direct URL string, or "" on failure.
+        """
+        try:
+            result = self._rclone_run([
+                "link",
+                remote_path,
+                "--drive-link-sharing-permission", "reader",
+            ])
+            if result.returncode != 0 or not result.stdout.strip():
+                logger.warning(
+                    "rclone link failed for %s [rc=%d]: %s",
+                    remote_path, result.returncode, result.stderr.strip(),
+                )
+                return ""
+
+            share_url = result.stdout.strip()
+            # Convert Google Drive share URL to direct embed URL
+            # https://drive.google.com/file/d/FILE_ID/view?usp=sharing
+            # -> https://drive.google.com/uc?export=view&id=FILE_ID
+            import re as _re
+            m = _re.search(r"/d/([a-zA-Z0-9_-]+)", share_url)
+            if m:
+                file_id = m.group(1)
+                direct_url = f"https://drive.google.com/uc?export=view&id={file_id}"
+                logger.debug("Public link: %s -> %s", remote_path, direct_url)
+                return direct_url
+
+            logger.warning("Could not parse file ID from: %s", share_url)
+            return share_url
+
+        except Exception as exc:
+            logger.warning("get_public_link error for %s: %s", remote_path, exc)
+            return ""
 
     # ------------------------------------------------------------------
     # Internal — config parsing
