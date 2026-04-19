@@ -194,7 +194,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           # เพิ่ม gallery/ และ screenshots/ เข้า staging
-          git add gallery/ screenshots/ --ignore-errors || true
+          git add gallery/ --ignore-errors || true
 
           # ตรวจว่ามีอะไรเปลี่ยนจริงๆ ก่อน commit
           if git diff --cached --quiet; then
