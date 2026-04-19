@@ -50,6 +50,7 @@ REQUEST_TIMEOUT_SEC: int = 30
 
 TZ_NEW_YORK: pytz.BaseTzInfo = pytz.timezone("America/New_York")
 TZ_UTC: pytz.BaseTzInfo = pytz.utc
+TZ_BANGKOK: pytz.BaseTzInfo = pytz.timezone("Asia/Bangkok")  # UTC+7
 
 
 # ---------------------------------------------------------------------------
@@ -286,13 +287,17 @@ class TelegramSender:
         else:
             dt_et = dt.astimezone(TZ_NEW_YORK)
 
+        # Convert to Bangkok time (UTC+7) for display
+        dt_bkk = dt_et.astimezone(TZ_BANGKOK)
+
         # --- Line 1: symbol + market + optional tag ---
         tag_suffix = f" [{tag}]" if tag else ""
         line1 = f"📊 {symbol} | {market}{tag_suffix}"
 
-        # --- Line 2: timestamp in ET ---
-        ts_str = dt_et.strftime("%Y-%m-%d %H:%M")
-        line2 = f"🕐 {ts_str} ET"
+        # --- Line 2: timestamp ET + Bangkok ---
+        ts_et  = dt_et.strftime("%Y-%m-%d %H:%M")
+        ts_bkk = dt_bkk.strftime("%H:%M")
+        line2 = f"🕐 {ts_et} ET  |  {ts_bkk} ICT"
 
         # --- Line 3: drive info (optional) ---
         drive_str = ""
