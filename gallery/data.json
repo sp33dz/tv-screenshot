@@ -1,60 +1,60 @@
 {
   "entries": [
     {
-      "path": "US/AIXI/2026-04/AIXI_2026-04-19_14-08.png",
-      "abs_path": "screenshots/US/AIXI/2026-04/AIXI_2026-04-19_14-08.png",
+      "path": "US/AIXI/2026-04/AIXI_2026-04-19_14-51.png",
+      "abs_path": "screenshots/US/AIXI/2026-04/AIXI_2026-04-19_14-51.png",
       "symbol": "AIXI",
       "market": "US",
       "date": "2026-04-19",
-      "time": "14-08",
+      "time": "14-51",
       "tag": "",
       "is_pinned": false,
-      "size_bytes": 222105,
+      "size_bytes": 347099,
       "month": "2026-04",
       "drive_name": "DriveD",
-      "datetime_str": "2026-04-19 14:08"
+      "datetime_str": "2026-04-19 14:51"
     },
     {
-      "path": "US/AMPX/2026-04/AMPX_2026-04-19_14-09.png",
-      "abs_path": "screenshots/US/AMPX/2026-04/AMPX_2026-04-19_14-09.png",
+      "path": "US/AMPX/2026-04/AMPX_2026-04-19_14-52.png",
+      "abs_path": "screenshots/US/AMPX/2026-04/AMPX_2026-04-19_14-52.png",
       "symbol": "AMPX",
       "market": "US",
       "date": "2026-04-19",
-      "time": "14-09",
+      "time": "14-52",
       "tag": "",
       "is_pinned": false,
-      "size_bytes": 222105,
+      "size_bytes": 399748,
       "month": "2026-04",
       "drive_name": "DriveF",
-      "datetime_str": "2026-04-19 14:09"
+      "datetime_str": "2026-04-19 14:52"
     },
     {
-      "path": "CRYPTO/BTCTHB/2026-04/BTCTHB_2026-04-19_14-09.png",
-      "abs_path": "screenshots/CRYPTO/BTCTHB/2026-04/BTCTHB_2026-04-19_14-09.png",
+      "path": "CRYPTO/BTCTHB/2026-04/BTCTHB_2026-04-19_14-52.png",
+      "abs_path": "screenshots/CRYPTO/BTCTHB/2026-04/BTCTHB_2026-04-19_14-52.png",
       "symbol": "BTCTHB",
       "market": "CRYPTO",
       "date": "2026-04-19",
-      "time": "14-09",
+      "time": "14-52",
       "tag": "",
       "is_pinned": false,
-      "size_bytes": 222105,
+      "size_bytes": 405538,
       "month": "2026-04",
       "drive_name": "",
-      "datetime_str": "2026-04-19 14:09"
+      "datetime_str": "2026-04-19 14:52"
     },
     {
-      "path": "US/ENPH/2026-04/ENPH_2026-04-19_14-08.png",
-      "abs_path": "screenshots/US/ENPH/2026-04/ENPH_2026-04-19_14-08.png",
+      "path": "US/ENPH/2026-04/ENPH_2026-04-19_14-51.png",
+      "abs_path": "screenshots/US/ENPH/2026-04/ENPH_2026-04-19_14-51.png",
       "symbol": "ENPH",
       "market": "US",
       "date": "2026-04-19",
-      "time": "14-08",
+      "time": "14-51",
       "tag": "",
       "is_pinned": false,
-      "size_bytes": 222105,
+      "size_bytes": 424545,
       "month": "2026-04",
       "drive_name": "DriveB",
-      "datetime_str": "2026-04-19 14:08"
+      "datetime_str": "2026-04-19 14:51"
     }
   ],
   "symbols": [
@@ -79,5 +79,5 @@
     "DriveG"
   ],
   "total_files": 4,
-  "generated_at": "2026-04-19T14:09:21"
+  "generated_at": "2026-04-19T14:52:24"
 }
