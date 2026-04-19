@@ -6,9 +6,9 @@
 name: TradingView Auto Screenshot
 
 on:
-  schedule:
+  #schedule:
     # ทุกชั่วโมง ที่นาทีที่ 5 (UTC)
-    - cron: "5 * * * *"
+  #  - cron: "5 * * * *"
   workflow_dispatch:
     inputs:
       debug:
