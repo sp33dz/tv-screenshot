@@ -1,0 +1,24 @@
+# requirements.txt — TradingView Auto Screenshot System (Linux/Cloud Edition)
+# Install: pip install -r requirements.txt
+# Then:    playwright install chromium
+
+# Core screenshot engine
+playwright>=1.40.0
+
+# Image processing
+Pillow>=10.0.0
+
+# Perceptual hash for duplicate detection
+imagehash>=4.3.0
+
+# Timezone handling
+pytz>=2024.1
+
+# NYSE holiday API fetch
+requests>=2.31.0
+
+# Telegram Bot integration
+python-telegram-bot>=20.0
+
+# Optional: video export from gallery (module5)
+# opencv-python>=4.8.0
