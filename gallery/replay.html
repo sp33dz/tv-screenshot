@@ -1,0 +1,428 @@
+\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>TradingView AutoShot — Chart Replay</title>
+<style>
+:root {
+  --bg: #0d1117; --panel: #161b22; --border: #30363d;
+  --accent: #00c896; --text: #e6edf3; --muted: #8b949e;
+  --bull: #2ea043; --bear: #da3633;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif;
+        display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+/* ── Header toolbar ── */
+#header {
+  background: var(--panel); border-bottom: 1px solid var(--border);
+  padding: 10px 16px; display: flex; align-items: center; gap: 10px; flex-shrink: 0; flex-wrap: wrap;
+}
+#header h1 { font-size: 14px; color: var(--accent); margin-right: 8px; white-space: nowrap; }
+select, input[type=date] {
+  background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  padding: 6px 8px; border-radius: 6px; font-size: 13px;
+}
+select:focus, input:focus { outline: none; border-color: var(--accent); }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  padding: 6px 14px; border-radius: 6px; font-size: 13px; cursor: pointer;
+  border: none; font-weight: 500; transition: opacity 0.15s;
+}
+.btn:hover { opacity: 0.82; }
+.btn-accent { background: var(--accent); color: #000; }
+.btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+.btn-danger { background: transparent; border: 1px solid var(--bear); color: var(--bear); }
+#frame-info { font-size: 12px; color: var(--muted); white-space: nowrap; }
+
+/* ── Main image ── */
+#viewport {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  background: #000; position: relative; overflow: hidden;
+}
+#replay-img {
+  max-width: 100%; max-height: 100%; object-fit: contain;
+  transition: opacity 0.08s;
+  user-select: none;
+}
+#overlay {
+  position: absolute; top: 12px; left: 12px; background: rgba(0,0,0,0.65);
+  border-radius: 6px; padding: 8px 12px; font-size: 13px; line-height: 1.7;
+  pointer-events: none;
+}
+#no-img {
+  position: absolute; color: var(--muted); font-size: 15px; text-align: center;
+}
+
+/* ── Timeline scrubber ── */
+#scrubber-wrap {
+  padding: 8px 16px 4px; background: var(--panel); border-top: 1px solid var(--border); flex-shrink: 0;
+}
+#scrubber { width: 100%; accent-color: var(--accent); cursor: pointer; }
+#timeline-labels {
+  display: flex; justify-content: space-between; font-size: 10px;
+  color: var(--muted); margin-top: 2px; padding: 0 2px;
+}
+
+/* ── Controls ── */
+#controls {
+  background: var(--panel); border-top: 1px solid var(--border);
+  padding: 10px 16px; display: flex; align-items: center; gap: 10px;
+  flex-shrink: 0; flex-wrap: wrap;
+}
+#speed-label { font-size: 12px; color: var(--muted); white-space: nowrap; }
+#speed-range { accent-color: var(--accent); width: 100px; cursor: pointer; }
+#note-input {
+  flex: 1; background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  padding: 6px 10px; border-radius: 6px; font-size: 13px; min-width: 140px;
+}
+#mark-sel {
+  background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  padding: 6px; border-radius: 6px; font-size: 13px;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div id="header">
+  <h1>▶ Chart Replay</h1>
+
+  <select id="sel-symbol" onchange="onSymbolChange()">
+    <option value="">— Symbol —</option>
+  </select>
+  <select id="sel-market" onchange="applySource()">
+    <option value="">All Markets</option>
+    <option value="CRYPTO">CRYPTO</option>
+    <option value="US">US</option>
+  </select>
+  <select id="sel-drive" onchange="applySource()">
+    <option value="">All Drives</option>
+  </select>
+  <select id="sel-tag" onchange="applySource()">
+    <option value="">All Tags</option>
+  </select>
+
+  <input type="date" id="jump-date" title="Jump to date"/>
+  <button class="btn btn-outline" onclick="jumpToDate()">Jump</button>
+
+  <button class="btn btn-outline" onclick="openGallery()">Gallery ↗</button>
+  <span id="frame-info">—</span>
+</div>
+
+<!-- Viewport -->
+<div id="viewport">
+  <div id="no-img">Select a symbol to begin replay</div>
+  <img id="replay-img" src="" alt="" style="display:none"/>
+  <div id="overlay" style="display:none">
+    <div id="ov-symbol" style="font-weight:600;color:var(--accent)"></div>
+    <div id="ov-datetime" style="color:var(--text)"></div>
+    <div id="ov-tag" style="color:#888"></div>
+    <div id="ov-note" style="color:var(--note);margin-top:3px"></div>
+  </div>
+</div>
+
+<!-- Scrubber -->
+<div id="scrubber-wrap">
+  <input type="range" id="scrubber" min="0" max="0" value="0"
+         oninput="onScrub()" onchange="onScrub()"/>
+  <div id="timeline-labels">
+    <span id="tl-start">—</span>
+    <span id="tl-end">—</span>
+  </div>
+</div>
+
+<!-- Controls -->
+<div id="controls">
+  <button class="btn btn-outline" onclick="stepFrame(-1)" title="Previous [←]">⏮ Prev</button>
+  <button class="btn btn-accent" id="play-btn" onclick="togglePlay()" title="Play/Pause [Space]">▶ Play</button>
+  <button class="btn btn-outline" onclick="stepFrame(1)" title="Next [→]">Next ⏭</button>
+
+  <span id="speed-label">Speed: <b id="speed-val">1×</b></span>
+  <input type="range" id="speed-range" min="0" max="5" value="2" step="1" oninput="onSpeedChange()"/>
+
+  <input id="note-input" type="text" placeholder="Note for this frame…"/>
+  <select id="mark-sel">
+    <option value="">No mark</option>
+    <option value="BULL">🟢 Bull</option>
+    <option value="BEAR">🔴 Bear</option>
+    <option value="NOTE">📝 Note</option>
+  </select>
+  <button class="btn btn-outline" onclick="saveFrame()">Save Note</button>
+</div>
+
+<script>
+const SPEEDS = [0.5, 1, 2, 4, 8, 16];  // index maps to range value 0-5
+const DEFAULT_SPEED_IDX = 1;            // 1× default
+
+// ── Inline data (embedded at build time — works with file://) ──────
+const _INLINE_DATA      = {"entries": [{"path": "US/AIXI/2026-04/AIXI_2026-04-19_14-08.png", "abs_path": "screenshots/US/AIXI/2026-04/AIXI_2026-04-19_14-08.png", "symbol": "AIXI", "market": "US", "date": "2026-04-19", "time": "14-08", "tag": "", "is_pinned": false, "size_bytes": 222105, "month": "2026-04", "drive_name": "DriveD", "datetime_str": "2026-04-19 14:08"}, {"path": "US/AMPX/2026-04/AMPX_2026-04-19_14-09.png", "abs_path": "screenshots/US/AMPX/2026-04/AMPX_2026-04-19_14-09.png", "symbol": "AMPX", "market": "US", "date": "2026-04-19", "time": "14-09", "tag": "", "is_pinned": false, "size_bytes": 222105, "month": "2026-04", "drive_name": "DriveF", "datetime_str": "2026-04-19 14:09"}, {"path": "CRYPTO/BTCTHB/2026-04/BTCTHB_2026-04-19_14-09.png", "abs_path": "screenshots/CRYPTO/BTCTHB/2026-04/BTCTHB_2026-04-19_14-09.png", "symbol": "BTCTHB", "market": "CRYPTO", "date": "2026-04-19", "time": "14-09", "tag": "", "is_pinned": false, "size_bytes": 222105, "month": "2026-04", "drive_name": "", "datetime_str": "2026-04-19 14:09"}, {"path": "US/ENPH/2026-04/ENPH_2026-04-19_14-08.png", "abs_path": "screenshots/US/ENPH/2026-04/ENPH_2026-04-19_14-08.png", "symbol": "ENPH", "market": "US", "date": "2026-04-19", "time": "14-08", "tag": "", "is_pinned": false, "size_bytes": 222105, "month": "2026-04", "drive_name": "DriveB", "datetime_str": "2026-04-19 14:08"}], "symbols": ["AIXI", "AMPX", "BTCTHB", "ENPH"], "markets": ["CRYPTO", "US"], "months": ["2026-04"], "tags": [], "drives": ["DriveA", "DriveB", "DriveD", "DriveF", "DriveG"], "total_files": 4, "generated_at": "2026-04-19T14:09:21"};
+const _INLINE_NOTES     = {};
+const _ABS_SHOT_DIR     = '/home/runner/work/tv-screenshot/tv-screenshot/screenshots';
+const _GITHUB_PAGES_URL = 'https://sp33dz.github.io/tv-screenshot';  // "" = disabled
+
+let ALL = [];
+let NOTES = {};
+let source = [];     // filtered entries for current replay
+let idx = 0;
+let playing = false;
+let timer = null;
+let speedIdx = DEFAULT_SPEED_IDX;
+
+// ── Init ──────────────────────────────────────────────────────────
+async function init() {
+  try {
+    // Always use embedded data first — works with file:// and http://
+    ALL = _INLINE_DATA.entries || [];
+    fillSymbols(_INLINE_DATA.symbols || []);
+    fillTags(_INLINE_DATA.tags || []);
+    fillDrives(_INLINE_DATA.drives || []);
+    NOTES = Object.assign({}, _INLINE_NOTES);
+
+    // In file:// mode, merge notes from localStorage (user-saved notes)
+    if (window.location.protocol === 'file:') {
+      try {
+        const stored = localStorage.getItem('tv_notes');
+        if (stored) NOTES = Object.assign({}, NOTES, JSON.parse(stored));
+      } catch(_) {}
+    }
+
+    // If running via http:// server, also try live fetch for fresher data
+    if (window.location.protocol !== 'file:') {
+      try {
+        const [dr, nr] = await Promise.allSettled([
+          fetch('data.json').then(r => r.json()),
+          fetch('notes.json').then(r => r.json()),
+        ]);
+        if (dr.status === 'fulfilled') {
+          ALL = dr.value.entries || [];
+          fillSymbols(dr.value.symbols || []);
+          fillTags(dr.value.tags || []);
+          fillDrives(dr.value.drives || []);
+        }
+        if (nr.status === 'fulfilled') NOTES = nr.value;
+      } catch(_) { /* live fetch failed — using inline data */ }
+    }
+  } catch(e) { console.error(e); }
+}
+
+function fillSymbols(syms) {
+  const sel = document.getElementById('sel-symbol');
+  const first = sel.options[0];
+  sel.innerHTML = '';
+  sel.appendChild(first);
+  syms.forEach(s => {
+    const o = document.createElement('option');
+    o.value = s; o.textContent = s;
+    sel.appendChild(o);
+  });
+}
+
+function fillTags(tags) {
+  const sel = document.getElementById('sel-tag');
+  const first = sel.options[0];
+  sel.innerHTML = '';
+  sel.appendChild(first);
+  tags.forEach(t => {
+    const o = document.createElement('option');
+    o.value = t; o.textContent = t;
+    sel.appendChild(o);
+  });
+}
+
+function fillDrives(drives) {
+  const sel = document.getElementById('sel-drive');
+  const first = sel.options[0];
+  sel.innerHTML = '';
+  sel.appendChild(first);
+  (drives || []).forEach(d => {
+    const o = document.createElement('option');
+    o.value = d; o.textContent = d;
+    sel.appendChild(o);
+  });
+}
+
+// ── Source / filters ──────────────────────────────────────────────
+function onSymbolChange() { applySource(); }
+
+function applySource() {
+  const sym = document.getElementById('sel-symbol').value;
+  const mkt = document.getElementById('sel-market').value;
+  const drv = document.getElementById('sel-drive').value;
+  const tag = document.getElementById('sel-tag').value;
+
+  if (!sym) { source = []; renderFrame(); return; }
+
+  source = ALL.filter(e =>
+    e.symbol === sym &&
+    (!mkt || e.market === mkt) &&
+    (!drv || e.drive_name === drv) &&
+    (!tag || e.tag === tag)
+  ).sort((a,b) => (a.sort_key || '').localeCompare(b.sort_key || ''));
+
+  idx = 0;
+  const scrub = document.getElementById('scrubber');
+  scrub.max = Math.max(0, source.length - 1);
+  scrub.value = 0;
+  updateTimeline();
+  renderFrame();
+}
+
+function updateTimeline() {
+  const tls = document.getElementById('tl-start');
+  const tle = document.getElementById('tl-end');
+  if (source.length) {
+    tls.textContent = source[0].date;
+    tle.textContent = source[source.length-1].date;
+  } else {
+    tls.textContent = tle.textContent = '—';
+  }
+}
+
+// ── Playback ──────────────────────────────────────────────────────
+function togglePlay() {
+  playing = !playing;
+  document.getElementById('play-btn').textContent = playing ? '⏸ Pause' : '▶ Play';
+  if (playing) scheduleNext();
+  else clearTimeout(timer);
+}
+
+function scheduleNext() {
+  if (!playing) return;
+  const fps = SPEEDS[speedIdx];
+  const delay = 1000 / fps;
+  timer = setTimeout(() => {
+    if (idx < source.length - 1) {
+      idx++;
+      syncScrubber();
+      renderFrame();
+      scheduleNext();
+    } else {
+      playing = false;
+      document.getElementById('play-btn').textContent = '▶ Play';
+    }
+  }, delay);
+}
+
+function stepFrame(d) {
+  clearTimeout(timer);
+  playing = false;
+  document.getElementById('play-btn').textContent = '▶ Play';
+  idx = Math.max(0, Math.min(source.length - 1, idx + d));
+  syncScrubber();
+  renderFrame();
+}
+
+function onScrub() {
+  idx = parseInt(document.getElementById('scrubber').value, 10);
+  renderFrame();
+}
+
+function syncScrubber() {
+  document.getElementById('scrubber').value = idx;
+}
+
+function onSpeedChange() {
+  speedIdx = parseInt(document.getElementById('speed-range').value, 10);
+  const v = SPEEDS[speedIdx];
+  document.getElementById('speed-val').textContent = v + '×';
+}
+
+function jumpToDate() {
+  const d = document.getElementById('jump-date').value;
+  if (!d || !source.length) return;
+  const i = source.findIndex(e => e.date >= d);
+  if (i >= 0) { idx = i; syncScrubber(); renderFrame(); }
+}
+
+// ── Render ────────────────────────────────────────────────────────
+function renderFrame() {
+  const img = document.getElementById('replay-img');
+  const noImg = document.getElementById('no-img');
+  const overlay = document.getElementById('overlay');
+
+  if (!source.length) {
+    img.style.display = 'none';
+    noImg.style.display = '';
+    overlay.style.display = 'none';
+    document.getElementById('frame-info').textContent = '—';
+    return;
+  }
+
+  const e = source[idx];
+  const rel = e.path;
+  let absUrl;
+  if (_GITHUB_PAGES_URL) {
+    absUrl = _GITHUB_PAGES_URL + '/screenshots/' + rel;
+  } else if (window.location.protocol === 'file:') {
+    absUrl = 'file:///' + _ABS_SHOT_DIR.replace(/^\//, '') + '/' + rel;
+  } else {
+    absUrl = '../screenshots/' + rel;
+  }
+
+  img.style.opacity = '0';
+  img.src = absUrl;
+  img.onload = () => { img.style.opacity = '1'; };
+  img.style.display = '';
+  noImg.style.display = 'none';
+  overlay.style.display = '';
+
+  document.getElementById('ov-symbol').textContent = e.symbol + ' · ' + e.market;
+  document.getElementById('ov-datetime').textContent = e.datetime_str;
+  document.getElementById('ov-tag').textContent = e.tag || '';
+
+  const n = NOTES[rel];
+  document.getElementById('ov-note').textContent = n?.note ? '📝 ' + n.note : '';
+  document.getElementById('note-input').value = n?.note || '';
+  document.getElementById('mark-sel').value = n?.trade_mark || '';
+
+  document.getElementById('frame-info').textContent =
+    `Frame ${idx+1} / ${source.length} — ${e.datetime_str}`;
+}
+
+// ── Annotation ────────────────────────────────────────────────────
+async function saveFrame() {
+  if (!source.length) return;
+  const e = source[idx];
+  const note = document.getElementById('note-input').value.trim();
+  const mark = document.getElementById('mark-sel').value;
+  NOTES[e.path] = { path: e.path, note, trade_mark: mark, updated_at: new Date().toISOString() };
+  if (window.location.protocol === 'file:') {
+    try { localStorage.setItem('tv_notes', JSON.stringify(NOTES)); } catch(_) {}
+  } else {
+    try {
+      await fetch('/save_note', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ path: e.path, note, trade_mark: mark }),
+      });
+    } catch(_) {/* standalone */}
+  }
+  renderFrame();
+}
+
+function openGallery() { window.open('index.html', '_blank'); }
+
+// ── Keyboard ──────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === 'ArrowLeft')  stepFrame(-1);
+  if (e.key === 'ArrowRight') stepFrame(1);
+  if (e.key === ' ')          { e.preventDefault(); togglePlay(); }
+});
+
+// ── Speed init ────────────────────────────────────────────────────
+document.getElementById('speed-range').value = DEFAULT_SPEED_IDX;
+document.getElementById('speed-val').textContent = SPEEDS[DEFAULT_SPEED_IDX] + '×';
+
+init();
+</script>
+</body>
+</html>
