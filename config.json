@@ -26,39 +26,16 @@
   "screenshot_mode": "playwright",
   "playwright_wait_sec": 15,
   "playwright_headless": true,
-  "github_pages_url": "https://YOUR_USER.github.io/YOUR_REPO",
+  "github_pages_url": "https://sp33dz.github.io/tv-screenshot",
   "telegram": {
     "enabled": true
   },
   "drives": [
-    {"name": "Drive1", "rclone_remote": "gdrive1:", "limit_gb": 9.5, "label": "CRYPTO"},
-    {"name": "Drive2", "rclone_remote": "gdrive2:", "limit_gb": 9.5, "label": "US-A"},
-    {"name": "Drive3", "rclone_remote": "gdrive3:", "limit_gb": 9.5, "label": "US-B"}
+    {"name": "DriveA", "rclone_remote": "gdrive1:", "limit_gb": 9.5, "label": "CRYPTO"},
+    {"name": "DriveB", "rclone_remote": "gdrive2:", "limit_gb": 9.5, "label": "US-B"},
+    {"name": "DriveD", "rclone_remote": "gdrive3:", "limit_gb": 9.5, "label": "US-D"},
+    {"name": "DriveF", "rclone_remote": "gdrive4:", "limit_gb": 9.5, "label": "US-F"},
+    {"name": "DriveG", "rclone_remote": "gdrive5:", "limit_gb": 9.5, "label": "US-G"}
   ],
-  "stocks": [
-    {
-      "symbol": "ENPH",
-      "market": "US",
-      "chrome_profile": "Default",
-      "url": "https://th.tradingview.com/chart/VfQ9T1b2/?symbol=ENPH"
-    },
-    {
-      "symbol": "AIXI",
-      "market": "US",
-      "chrome_profile": "Default",
-      "url": "https://th.tradingview.com/chart/VfQ9T1b2/?symbol=AIXI"
-    },
-    {
-      "symbol": "AMPX",
-      "market": "US",
-      "chrome_profile": "Default",
-      "url": "https://th.tradingview.com/chart/VfQ9T1b2/?symbol=AMPX"
-    },
-    {
-      "symbol": "BTCTHB",
-      "market": "CRYPTO",
-      "chrome_profile": "Default",
-      "url": "https://th.tradingview.com/chart/VfQ9T1b2/?symbol=BTCTHB"
-    }
-  ]
+  "stocks": []
 }
