@@ -87,9 +87,40 @@ select:focus, input:focus { outline: none; border-color: var(--accent); }
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* ── Password screen ── */
+#pw-screen {
+  position: fixed; inset: 0; background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 9999; flex-direction: column; gap: 16px;
+}
+#pw-screen h2 { font-size: 18px; color: var(--accent); font-weight: 500; }
+#pw-screen p  { font-size: 13px; color: var(--muted); }
+#pw-box {
+  background: var(--panel); border: 1px solid var(--border);
+  color: var(--text); padding: 10px 16px; border-radius: 8px;
+  font-size: 15px; width: 260px; text-align: center; outline: none;
+}
+#pw-box:focus { border-color: var(--accent); }
+#pw-btn {
+  background: var(--accent); color: #000; border: none;
+  padding: 10px 32px; border-radius: 8px; font-size: 14px;
+  font-weight: 600; cursor: pointer; width: 260px;
+}
+#pw-btn:hover { opacity: 0.85; }
+#pw-err { color: #da3633; font-size: 13px; display: none; }
 </style>
 </head>
 <body>
+
+<div id="pw-screen">
+  <h2>🔒 Chart Replay</h2>
+  <p>Enter password to continue</p>
+  <input id="pw-box" type="password" placeholder="Password"
+         onkeydown="if(event.key==='Enter')checkPw()"/>
+  <button id="pw-btn" onclick="checkPw()">Unlock</button>
+  <span id="pw-err">Incorrect password — try again</span>
+</div>
 
 <!-- Header -->
 <div id="header">
@@ -163,7 +194,7 @@ const SPEEDS = [0.5, 1, 2, 4, 8, 16];  // index maps to range value 0-5
 const DEFAULT_SPEED_IDX = 1;            // 1× default
 
 // ── Inline data (embedded at build time — works with file://) ──────
-const _INLINE_DATA      = {"entries": [{"path": "US/AIXI/2026-04/AIXI_2026-04-19_14-51.png", "abs_path": "screenshots/US/AIXI/2026-04/AIXI_2026-04-19_14-51.png", "symbol": "AIXI", "market": "US", "date": "2026-04-19", "time": "14-51", "tag": "", "is_pinned": false, "size_bytes": 347099, "month": "2026-04", "drive_name": "DriveD", "datetime_str": "2026-04-19 14:51"}, {"path": "US/AMPX/2026-04/AMPX_2026-04-19_14-52.png", "abs_path": "screenshots/US/AMPX/2026-04/AMPX_2026-04-19_14-52.png", "symbol": "AMPX", "market": "US", "date": "2026-04-19", "time": "14-52", "tag": "", "is_pinned": false, "size_bytes": 399748, "month": "2026-04", "drive_name": "DriveF", "datetime_str": "2026-04-19 14:52"}, {"path": "CRYPTO/BTCTHB/2026-04/BTCTHB_2026-04-19_14-52.png", "abs_path": "screenshots/CRYPTO/BTCTHB/2026-04/BTCTHB_2026-04-19_14-52.png", "symbol": "BTCTHB", "market": "CRYPTO", "date": "2026-04-19", "time": "14-52", "tag": "", "is_pinned": false, "size_bytes": 405538, "month": "2026-04", "drive_name": "", "datetime_str": "2026-04-19 14:52"}, {"path": "US/ENPH/2026-04/ENPH_2026-04-19_14-51.png", "abs_path": "screenshots/US/ENPH/2026-04/ENPH_2026-04-19_14-51.png", "symbol": "ENPH", "market": "US", "date": "2026-04-19", "time": "14-51", "tag": "", "is_pinned": false, "size_bytes": 424545, "month": "2026-04", "drive_name": "DriveB", "datetime_str": "2026-04-19 14:51"}], "symbols": ["AIXI", "AMPX", "BTCTHB", "ENPH"], "markets": ["CRYPTO", "US"], "months": ["2026-04"], "tags": [], "drives": ["DriveA", "DriveB", "DriveD", "DriveF", "DriveG"], "total_files": 4, "generated_at": "2026-04-19T14:52:24"};
+const _INLINE_DATA      = {"entries": [{"path": "US/AIXI/2026-04/AIXI_2026-04-19_16-53.png", "abs_path": "screenshots/US/AIXI/2026-04/AIXI_2026-04-19_16-53.png", "symbol": "AIXI", "market": "US", "date": "2026-04-19", "time": "16-53", "tag": "", "is_pinned": false, "size_bytes": 371460, "month": "2026-04", "drive_name": "DriveD", "drive_public_url": "", "datetime_str": "2026-04-19 16:53"}, {"path": "US/AMPX/2026-04/AMPX_2026-04-19_16-54.png", "abs_path": "screenshots/US/AMPX/2026-04/AMPX_2026-04-19_16-54.png", "symbol": "AMPX", "market": "US", "date": "2026-04-19", "time": "16-54", "tag": "", "is_pinned": false, "size_bytes": 407086, "month": "2026-04", "drive_name": "DriveF", "drive_public_url": "", "datetime_str": "2026-04-19 16:54"}, {"path": "CRYPTO/BTCTHB/2026-04/BTCTHB_2026-04-19_16-54.png", "abs_path": "screenshots/CRYPTO/BTCTHB/2026-04/BTCTHB_2026-04-19_16-54.png", "symbol": "BTCTHB", "market": "CRYPTO", "date": "2026-04-19", "time": "16-54", "tag": "", "is_pinned": false, "size_bytes": 399983, "month": "2026-04", "drive_name": "", "drive_public_url": "", "datetime_str": "2026-04-19 16:54"}, {"path": "US/ENPH/2026-04/ENPH_2026-04-19_16-53.png", "abs_path": "screenshots/US/ENPH/2026-04/ENPH_2026-04-19_16-53.png", "symbol": "ENPH", "market": "US", "date": "2026-04-19", "time": "16-53", "tag": "", "is_pinned": false, "size_bytes": 420780, "month": "2026-04", "drive_name": "DriveB", "drive_public_url": "", "datetime_str": "2026-04-19 16:53"}], "symbols": ["AIXI", "AMPX", "BTCTHB", "ENPH"], "markets": ["CRYPTO", "US"], "months": ["2026-04"], "tags": [], "drives": ["DriveA", "DriveB", "DriveD", "DriveF", "DriveG"], "total_files": 4, "generated_at": "2026-04-19T16:54:47"};
 const _INLINE_NOTES     = {};
 const _ABS_SHOT_DIR     = '/home/runner/work/tv-screenshot/tv-screenshot/screenshots';
 const _GITHUB_PAGES_URL = 'https://sp33dz.github.io/tv-screenshot';  // "" = disabled
@@ -359,7 +390,9 @@ function renderFrame() {
   const e = source[idx];
   const rel = e.path;
   let absUrl;
-  if (_GITHUB_PAGES_URL) {
+  if (e.drive_public_url) {
+    absUrl = e.drive_public_url;
+  } else if (_GITHUB_PAGES_URL) {
     absUrl = _GITHUB_PAGES_URL + '/screenshots/' + rel;
   } else if (window.location.protocol === 'file:') {
     absUrl = 'file:///' + _ABS_SHOT_DIR.replace(/^\//, '') + '/' + rel;
@@ -422,7 +455,43 @@ document.addEventListener('keydown', e => {
 document.getElementById('speed-range').value = DEFAULT_SPEED_IDX;
 document.getElementById('speed-val').textContent = SPEEDS[DEFAULT_SPEED_IDX] + '×';
 
-init();
+/* ═══════════════════════════════════════════════
+   Password gate
+═══════════════════════════════════════════════ */
+const _PW_HASH = '';
+
+async function sha256hex(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+async function checkPw() {
+  const val = document.getElementById('pw-box').value;
+  const hash = await sha256hex(val);
+  if (hash === _PW_HASH) {
+    sessionStorage.setItem('tv_auth', hash);
+    document.getElementById('pw-screen').style.display = 'none';
+  } else {
+    document.getElementById('pw-err').style.display = 'block';
+    document.getElementById('pw-box').value = '';
+    document.getElementById('pw-box').focus();
+  }
+}
+
+(async () => {
+  if (!_PW_HASH) {
+    document.getElementById('pw-screen').style.display = 'none';
+  } else {
+    const saved = sessionStorage.getItem('tv_auth');
+    if (saved === _PW_HASH) {
+      document.getElementById('pw-screen').style.display = 'none';
+    } else {
+      document.getElementById('pw-box').focus();
+      return;  // don't call init until unlocked
+    }
+  }
+  init();
+})();
 </script>
 </body>
 </html>
