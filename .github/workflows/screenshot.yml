@@ -37,6 +37,8 @@ jobs:
       TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
       # ── rclone ────────────────────────────────────────────────
       RCLONE_CONF:        ${{ secrets.RCLONE_CONF }}
+      # ── Gallery password ──────────────────────────────────────
+      GALLERY_PASSWORD:   ${{ secrets.GALLERY_PASSWORD }}
       # ── Python ────────────────────────────────────────────────
       PYTHONUNBUFFERED: "1"
       PYTHONDONTWRITEBYTECODE: "1"
@@ -157,6 +159,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID:  ${{ secrets.TELEGRAM_CHAT_ID }}
           RCLONE_CONF:       ${{ secrets.RCLONE_CONF }}
+          GALLERY_PASSWORD:  ${{ secrets.GALLERY_PASSWORD }}
         run: |
           DEBUG_FLAG=""
           if [ "${{ github.event.inputs.debug }}" = "true" ]; then
