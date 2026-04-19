@@ -100,6 +100,7 @@ class ImageEntry:
     size_bytes: int
     month: str            # YYYY-MM
     drive_name: str = ""  # "Drive1" … "DriveN" from module7 assignment (optional)
+    drive_public_url: str = ""  # Google Drive public direct URL for <img src="">, "" = use github pages
 
     @property
     def datetime_str(self) -> str:
@@ -204,6 +205,18 @@ class GalleryManager:
             for d in raw_drives
             if isinstance(d, dict) and d.get("name")
         ]
+
+        # Gallery password hash — read from env GALLERY_PASSWORD_HASH (SHA-256 hex)
+        # Set by workflow from GALLERY_PASSWORD secret
+        import os as _os, hashlib as _hl
+        raw_pw = _os.environ.get("GALLERY_PASSWORD", "").strip()
+        env_hash = _os.environ.get("GALLERY_PASSWORD_HASH", "").strip()
+        if env_hash:
+            self.password_hash: str = env_hash
+        elif raw_pw:
+            self.password_hash = _hl.sha256(raw_pw.encode()).hexdigest()
+        else:
+            self.password_hash = ""  # no password = open access
 
         self._lock = threading.RLock()
 
@@ -524,6 +537,16 @@ class GalleryManager:
             except OSError:
                 pass
 
+        # Read .driveurl sidecar — Google Drive public direct URL
+        # Written by module6_integration after successful Drive sync
+        drive_public_url: str = ""
+        driveurl_sidecar = path.with_suffix(".driveurl")
+        if driveurl_sidecar.exists():
+            try:
+                drive_public_url = driveurl_sidecar.read_text(encoding="utf-8").strip()
+            except OSError:
+                pass
+
         return ImageEntry(
             path=rel,
             abs_path=str(path),
@@ -536,6 +559,7 @@ class GalleryManager:
             size_bytes=size_bytes,
             month=date_str[:7],
             drive_name=drive_name,
+            drive_public_url=drive_public_url,
         )
 
     # ------------------------------------------------------------------
@@ -586,7 +610,6 @@ class GalleryManager:
 
     def _generate_gallery_html(self, index: GalleryIndex, notes: Optional[dict] = None) -> bool:
         """Write gallery/index.html — main gallery with filter sidebar. Returns True on success."""
-        # Compute absolute screenshot folder path for file:// URLs
         abs_screenshot = self.screenshot_folder.resolve().as_posix()
         inline_data = json.dumps(index.to_dict(), ensure_ascii=False)
         inline_notes = json.dumps(notes or {}, ensure_ascii=False)
@@ -599,6 +622,7 @@ class GalleryManager:
             .replace("%%GITHUB_PAGES_URL%%", self.github_pages_url)
             .replace("%%INLINE_DATA%%", inline_data)
             .replace("%%INLINE_NOTES%%", inline_notes)
+            .replace("%%GALLERY_PASSWORD_HASH%%", self.password_hash)
         )
         out = self.gallery_folder / GALLERY_HTML
         try:
@@ -623,6 +647,7 @@ class GalleryManager:
             .replace("%%GITHUB_PAGES_URL%%", self.github_pages_url)
             .replace("%%INLINE_DATA%%", inline_data)
             .replace("%%INLINE_NOTES%%", inline_notes)
+            .replace("%%GALLERY_PASSWORD_HASH%%", self.password_hash)
         )
         out = self.gallery_folder / REPLAY_HTML
         try:
@@ -864,9 +889,42 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
   font-size: 16px; color: #fff; padding: 4px 6px;
   min-width: 120px; resize: none; overflow: hidden;
 }
+
+/* ── Password screen ── */
+#pw-screen {
+  position: fixed; inset: 0; background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 9999; flex-direction: column; gap: 16px;
+}
+#pw-screen h2 { font-size: 18px; color: var(--accent); font-weight: 500; }
+#pw-screen p  { font-size: 13px; color: var(--muted); }
+#pw-box {
+  background: var(--panel); border: 1px solid var(--border);
+  color: var(--text); padding: 10px 16px; border-radius: 8px;
+  font-size: 15px; width: 260px; text-align: center;
+  outline: none;
+}
+#pw-box:focus { border-color: var(--accent); }
+#pw-btn {
+  background: var(--accent); color: #000; border: none;
+  padding: 10px 32px; border-radius: 8px; font-size: 14px;
+  font-weight: 600; cursor: pointer; width: 260px;
+}
+#pw-btn:hover { opacity: 0.85; }
+#pw-err { color: #da3633; font-size: 13px; display: none; }
 </style>
 </head>
 <body>
+
+<!-- Password gate -->
+<div id="pw-screen">
+  <h2>🔒 AutoShot Gallery</h2>
+  <p>Enter password to view screenshots</p>
+  <input id="pw-box" type="password" placeholder="Password"
+         onkeydown="if(event.key==='Enter')checkPw()"/>
+  <button id="pw-btn" onclick="checkPw()">Unlock</button>
+  <span id="pw-err">Incorrect password — try again</span>
+</div>
 
 <div id="sidebar">
   <h1>📷 AutoShot Gallery</h1>
@@ -1534,7 +1592,7 @@ function loadLightboxImage() {
     // Fit to screen
     zoomFit();
   };
-  img.src = absPath(entry.path);
+  img.src = absPath(entry.path, entry);
 }
 
 /* ═══════════════════════════════════════════════
@@ -1567,14 +1625,14 @@ async function saveAnnotation() {
 /* ═══════════════════════════════════════════════
    Gallery data + filters (unchanged from original)
 ═══════════════════════════════════════════════ */
-function absPath(rel) {
-  // Priority: 1) GitHub Pages URL  2) file:// local  3) relative (http server)
-  if (_GITHUB_PAGES_URL) {
-    return _GITHUB_PAGES_URL + '/screenshots/' + rel;
-  }
-  if (window.location.protocol === 'file:') {
-    return 'file:///' + _ABS_SHOT_DIR.replace(/^\//, '') + '/' + rel;
-  }
+function absPath(rel, entry) {
+  // Priority: 1) Google Drive public URL (stored in entry.drive_public_url)
+  //           2) GitHub Pages URL
+  //           3) file:// local
+  //           4) relative (http server)
+  if (entry && entry.drive_public_url) return entry.drive_public_url;
+  if (_GITHUB_PAGES_URL) return _GITHUB_PAGES_URL + '/screenshots/' + rel;
+  if (window.location.protocol === 'file:') return 'file:///' + _ABS_SHOT_DIR.replace(/^\//, '') + '/' + rel;
   return '../screenshots/' + rel;
 }
 
@@ -1673,7 +1731,7 @@ function renderGrid() {
     card.onclick   = () => openLightbox(i);
     card.innerHTML = `
       ${mark ? `<div class="mark-bar ${mark}"></div>` : ''}
-      <img src="${absPath(e.path)}" alt="${e.symbol}" loading="lazy" onerror="this.style.background='#1c2128'"/>
+      <img src="${absPath(e.path, e)}" alt="${e.symbol}" loading="lazy" onerror="this.style.background='#1c2128'"/>
       <div class="card-info">
         <div class="card-symbol">
           ${e.symbol}
@@ -1690,7 +1748,49 @@ function renderGrid() {
 }
 function openReplay() { window.open('replay.html', '_blank'); }
 
-init();
+/* ═══════════════════════════════════════════════
+   Password gate
+═══════════════════════════════════════════════ */
+const _PW_HASH = '%%GALLERY_PASSWORD_HASH%%';  // SHA-256 hex, "" = no password
+
+async function sha256hex(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+async function checkPw() {
+  const val = document.getElementById('pw-box').value;
+  const hash = await sha256hex(val);
+  if (hash === _PW_HASH) {
+    sessionStorage.setItem('tv_auth', hash);
+    document.getElementById('pw-screen').style.display = 'none';
+  } else {
+    document.getElementById('pw-err').style.display = 'block';
+    document.getElementById('pw-box').value = '';
+    document.getElementById('pw-box').focus();
+  }
+}
+
+async function initAuth() {
+  if (!_PW_HASH) {
+    // No password configured — hide gate immediately
+    document.getElementById('pw-screen').style.display = 'none';
+    return true;
+  }
+  const saved = sessionStorage.getItem('tv_auth');
+  if (saved === _PW_HASH) {
+    document.getElementById('pw-screen').style.display = 'none';
+    return true;
+  }
+  // Show gate — focus input
+  document.getElementById('pw-box').focus();
+  return false;
+}
+
+(async () => {
+  await initAuth();
+  init();
+})();
 </script>
 </body>
 </html>
@@ -1785,9 +1885,40 @@ select:focus, input:focus { outline: none; border-color: var(--accent); }
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* ── Password screen ── */
+#pw-screen {
+  position: fixed; inset: 0; background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 9999; flex-direction: column; gap: 16px;
+}
+#pw-screen h2 { font-size: 18px; color: var(--accent); font-weight: 500; }
+#pw-screen p  { font-size: 13px; color: var(--muted); }
+#pw-box {
+  background: var(--panel); border: 1px solid var(--border);
+  color: var(--text); padding: 10px 16px; border-radius: 8px;
+  font-size: 15px; width: 260px; text-align: center; outline: none;
+}
+#pw-box:focus { border-color: var(--accent); }
+#pw-btn {
+  background: var(--accent); color: #000; border: none;
+  padding: 10px 32px; border-radius: 8px; font-size: 14px;
+  font-weight: 600; cursor: pointer; width: 260px;
+}
+#pw-btn:hover { opacity: 0.85; }
+#pw-err { color: #da3633; font-size: 13px; display: none; }
 </style>
 </head>
 <body>
+
+<div id="pw-screen">
+  <h2>🔒 Chart Replay</h2>
+  <p>Enter password to continue</p>
+  <input id="pw-box" type="password" placeholder="Password"
+         onkeydown="if(event.key==='Enter')checkPw()"/>
+  <button id="pw-btn" onclick="checkPw()">Unlock</button>
+  <span id="pw-err">Incorrect password — try again</span>
+</div>
 
 <!-- Header -->
 <div id="header">
@@ -2057,7 +2188,9 @@ function renderFrame() {
   const e = source[idx];
   const rel = e.path;
   let absUrl;
-  if (_GITHUB_PAGES_URL) {
+  if (e.drive_public_url) {
+    absUrl = e.drive_public_url;
+  } else if (_GITHUB_PAGES_URL) {
     absUrl = _GITHUB_PAGES_URL + '/screenshots/' + rel;
   } else if (window.location.protocol === 'file:') {
     absUrl = 'file:///' + _ABS_SHOT_DIR.replace(/^\//, '') + '/' + rel;
@@ -2120,7 +2253,43 @@ document.addEventListener('keydown', e => {
 document.getElementById('speed-range').value = DEFAULT_SPEED_IDX;
 document.getElementById('speed-val').textContent = SPEEDS[DEFAULT_SPEED_IDX] + '×';
 
-init();
+/* ═══════════════════════════════════════════════
+   Password gate
+═══════════════════════════════════════════════ */
+const _PW_HASH = '%%GALLERY_PASSWORD_HASH%%';
+
+async function sha256hex(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+async function checkPw() {
+  const val = document.getElementById('pw-box').value;
+  const hash = await sha256hex(val);
+  if (hash === _PW_HASH) {
+    sessionStorage.setItem('tv_auth', hash);
+    document.getElementById('pw-screen').style.display = 'none';
+  } else {
+    document.getElementById('pw-err').style.display = 'block';
+    document.getElementById('pw-box').value = '';
+    document.getElementById('pw-box').focus();
+  }
+}
+
+(async () => {
+  if (!_PW_HASH) {
+    document.getElementById('pw-screen').style.display = 'none';
+  } else {
+    const saved = sessionStorage.getItem('tv_auth');
+    if (saved === _PW_HASH) {
+      document.getElementById('pw-screen').style.display = 'none';
+    } else {
+      document.getElementById('pw-box').focus();
+      return;  // don't call init until unlocked
+    }
+  }
+  init();
+})();
 </script>
 </body>
 </html>
