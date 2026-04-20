@@ -239,9 +239,14 @@ class GalleryManager:
         """
         Scan screenshot folder, generate data.json + HTML gallery + replay page.
 
+        Merges newly-scanned entries with historical entries from the existing
+        data.json so that runs on ephemeral environments (e.g. GitHub Actions)
+        accumulate all screenshots across runs rather than overwriting with
+        only the current run's files.
+
         Returns
         -------
-        GalleryIndex with all discovered screenshots.
+        GalleryIndex with all discovered screenshots (current + historical).
         """
         with self._lock:
             logger.info("Building gallery from %s …", self.screenshot_folder)
@@ -249,6 +254,7 @@ class GalleryManager:
             self.gallery_folder.mkdir(parents=True, exist_ok=True)
             (self.gallery_folder / "exports").mkdir(exist_ok=True)
             index = self._scan_screenshots()
+            index = self._merge_historical(index)
             ok_data = self._write_data_json(index)
             notes = self._load_notes()
             ok_html = self._generate_gallery_html(index, notes)
@@ -580,6 +586,127 @@ class GalleryManager:
         except Exception as exc:
             logger.error("Failed to write data.json: %s", exc)
             return False
+
+    def _merge_historical(self, current_index: GalleryIndex) -> GalleryIndex:
+        """
+        Merge entries from the existing data.json (historical) with the
+        currently-scanned entries (current_index).
+
+        This is essential for ephemeral CI environments (e.g. GitHub Actions)
+        where screenshot PNG files are NOT persisted in the repo between runs.
+        Only gallery/data.json and sidecar files (.drive, .driveurl) are
+        committed to the repo; PNG files are uploaded to Google Drive.
+
+        Strategy
+        --------
+        - Key each entry by its ``path`` field (relative to screenshot_folder).
+        - Current-scan entries take priority over historical ones
+          (they have fresher sidecar data: drive_name, drive_public_url).
+        - Historical entries whose path is NOT found in the current scan
+          are kept as-is (these are screenshots from previous runs that no
+          longer exist as local PNG files).
+        - Metadata sets (symbols, markets, months, tags, drives) are rebuilt
+          from the merged entry list.
+
+        Returns
+        -------
+        A new GalleryIndex with the merged result.
+        """
+        data_path = self.gallery_folder / DATA_FILE
+        if not data_path.exists():
+            # No history yet — nothing to merge
+            return current_index
+
+        try:
+            raw = json.loads(data_path.read_text(encoding="utf-8"))
+            historical_entries_raw: list = raw.get("entries", [])
+        except Exception as exc:
+            logger.warning("_merge_historical: could not read existing data.json (%s) — skipping merge", exc)
+            return current_index
+
+        if not historical_entries_raw:
+            return current_index
+
+        # Build lookup of current-scan entries by path (highest priority)
+        current_by_path: Dict[str, ImageEntry] = {
+            e.path: e for e in current_index.entries
+        }
+
+        # Reconstruct historical ImageEntry objects from stored dicts
+        historical_count = 0
+        for raw_entry in historical_entries_raw:
+            path_key = raw_entry.get("path", "")
+            if not path_key:
+                continue
+            if path_key in current_by_path:
+                # Current scan already has this file — skip historical duplicate
+                # BUT update drive_public_url / drive_name if historical has them
+                # and current scan doesn't (file may have been uploaded since)
+                cur = current_by_path[path_key]
+                if not cur.drive_public_url and raw_entry.get("drive_public_url"):
+                    cur.drive_public_url = raw_entry["drive_public_url"]
+                if not cur.drive_name and raw_entry.get("drive_name"):
+                    cur.drive_name = raw_entry["drive_name"]
+                continue
+
+            # This entry is NOT on disk now → keep it from history
+            try:
+                entry = ImageEntry(
+                    path=path_key,
+                    abs_path=raw_entry.get("abs_path", path_key),
+                    symbol=raw_entry.get("symbol", ""),
+                    market=raw_entry.get("market", "UNKNOWN"),
+                    date=raw_entry.get("date", ""),
+                    time=raw_entry.get("time", ""),
+                    tag=raw_entry.get("tag", ""),
+                    is_pinned=bool(raw_entry.get("is_pinned", False)),
+                    size_bytes=int(raw_entry.get("size_bytes", 0)),
+                    month=raw_entry.get("month", raw_entry.get("date", "")[:7]),
+                    drive_name=raw_entry.get("drive_name", ""),
+                    drive_public_url=raw_entry.get("drive_public_url", ""),
+                )
+                if entry.symbol:  # skip corrupt entries
+                    current_by_path[path_key] = entry
+                    historical_count += 1
+            except Exception as exc:
+                logger.debug("_merge_historical: skip corrupt entry %r: %s", path_key, exc)
+
+        if historical_count:
+            logger.info(
+                "_merge_historical: kept %d historical entries not on disk this run",
+                historical_count,
+            )
+
+        # Rebuild merged list and metadata
+        merged_entries: List[ImageEntry] = sorted(
+            current_by_path.values(),
+            key=lambda e: (e.symbol, e.sort_key),
+        )
+
+        symbols: set = {e.symbol for e in merged_entries if e.symbol}
+        markets: set = {e.market for e in merged_entries if e.market}
+        months: set  = {e.month  for e in merged_entries if e.month}
+        tags: set    = {e.tag    for e in merged_entries if e.tag}
+        drives_seen: set = {e.drive_name for e in merged_entries if e.drive_name}
+
+        all_drives: list = sorted(
+            drives_seen | set(self.drive_names),
+            key=lambda d: (
+                int(d.replace("Drive", "")) if d.startswith("Drive") and d[5:].isdigit() else 999,
+                d,
+            ),
+        )
+
+        return GalleryIndex(
+            entries=merged_entries,
+            symbols=sorted(symbols),
+            markets=sorted(markets),
+            months=sorted(months),
+            tags=sorted(tags),
+            drives=all_drives,
+            total_files=len(merged_entries),
+            generated_at=datetime.utcnow().isoformat(timespec="seconds"),
+        )
 
     # ------------------------------------------------------------------
     # Internal — notes.json
