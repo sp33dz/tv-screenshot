@@ -508,8 +508,11 @@ class PlaywrightEngine:
                     )
 
                 now = datetime.now()
+                # ใช้เวลาไทย (UTC+7) สำหรับชื่อไฟล์ folder และ timestamp ทุกอย่าง
+                from datetime import timezone as _tz, timedelta as _td
+                now_thai = datetime.now(tz=_tz(timedelta(hours=7))).replace(tzinfo=None)
                 filepath = _build_filepath_simple(
-                    self.base_folder, symbol, market, now, tag
+                    self.base_folder, symbol, market, now_thai, tag
                 )
 
                 # Screenshot to bytes first for freeze detection
@@ -533,7 +536,7 @@ class PlaywrightEngine:
                     symbol=symbol,
                     market=market,
                     filepath=str(filepath),
-                    timestamp=now,
+                    timestamp=now_thai,
                     tag=tag,
                 )
 
@@ -552,7 +555,7 @@ class PlaywrightEngine:
 
                 self._notify(
                     f"OK {symbol}",
-                    f"Screenshot saved — {now.strftime('%H:%M')}",
+                    f"Screenshot saved — {now_thai.strftime('%H:%M')} +7",
                 )
                 return result
 

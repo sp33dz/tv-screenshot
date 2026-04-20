@@ -306,10 +306,10 @@ class TelegramSender:
             else:
                 drive_str = f"💾 {drive_name}"
 
-        # --- Hashtags ---
-        yyyymmdd = dt_et.strftime("%Y%m%d")
-        yyyymm = dt_et.strftime("%Y%m")
-        hh = dt_et.strftime("%H")
+        # --- Hashtags --- ใช้เวลาไทย (dt_thai) ทุกอย่าง
+        yyyymmdd = dt_thai.strftime("%Y%m%d")
+        yyyymm   = dt_thai.strftime("%Y%m")
+        hh       = dt_thai.strftime("%H")
         drive_tag = f" #{drive_name}" if drive_name else ""
         hashtags = (
             f"#{symbol} #{market}{drive_tag}"
