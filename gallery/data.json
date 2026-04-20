@@ -106,6 +106,21 @@
       "datetime_str": "2026-04-21 05:04"
     },
     {
+      "path": "US/AIXI/2026-04/AIXI_2026-04-21_06-04.png",
+      "abs_path": "screenshots/US/AIXI/2026-04/AIXI_2026-04-21_06-04.png",
+      "symbol": "AIXI",
+      "market": "US",
+      "date": "2026-04-21",
+      "time": "06-04",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 415423,
+      "month": "2026-04",
+      "drive_name": "DriveD",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=1tKq8j3GDaaeTHWSNiPamrrcr_z_obOm_&sz=s0-v1",
+      "datetime_str": "2026-04-21 06:04"
+    },
+    {
       "path": "US/AMPX/2026-04/AMPX_2026-04-20_23-32.png",
       "abs_path": "screenshots/US/AMPX/2026-04/AMPX_2026-04-20_23-32.png",
       "symbol": "AMPX",
@@ -209,6 +224,21 @@
       "drive_name": "DriveF",
       "drive_public_url": "https://drive.google.com/thumbnail?id=1BRYcLk9lkMu9GVc4iovkgyCo4uCX8GXF&sz=s0-v1",
       "datetime_str": "2026-04-21 05:05"
+    },
+    {
+      "path": "US/AMPX/2026-04/AMPX_2026-04-21_06-04.png",
+      "abs_path": "screenshots/US/AMPX/2026-04/AMPX_2026-04-21_06-04.png",
+      "symbol": "AMPX",
+      "market": "US",
+      "date": "2026-04-21",
+      "time": "06-04",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 400043,
+      "month": "2026-04",
+      "drive_name": "DriveF",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=1oSi31xHTkUHax0xw6pjKgWT-jUC83SSY&sz=s0-v1",
+      "datetime_str": "2026-04-21 06:04"
     },
     {
       "path": "CRYPTO/BTCTHB/2026-04/BTCTHB_2026-04-20_23-33.png",
@@ -316,6 +346,21 @@
       "datetime_str": "2026-04-21 05:07"
     },
     {
+      "path": "CRYPTO/BTCTHB/2026-04/BTCTHB_2026-04-21_06-05.png",
+      "abs_path": "screenshots/CRYPTO/BTCTHB/2026-04/BTCTHB_2026-04-21_06-05.png",
+      "symbol": "BTCTHB",
+      "market": "CRYPTO",
+      "date": "2026-04-21",
+      "time": "06-05",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 419708,
+      "month": "2026-04",
+      "drive_name": "DriveA",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=149WqcwYEo77aDaNb-jkEOestusHy9DE4&sz=s0-v1",
+      "datetime_str": "2026-04-21 06:05"
+    },
+    {
       "path": "US/ENPH/2026-04/ENPH_2026-04-20_23-31.png",
       "abs_path": "screenshots/US/ENPH/2026-04/ENPH_2026-04-20_23-31.png",
       "symbol": "ENPH",
@@ -421,6 +466,21 @@
       "datetime_str": "2026-04-21 05:03"
     },
     {
+      "path": "US/ENPH/2026-04/ENPH_2026-04-21_06-03.png",
+      "abs_path": "screenshots/US/ENPH/2026-04/ENPH_2026-04-21_06-03.png",
+      "symbol": "ENPH",
+      "market": "US",
+      "date": "2026-04-21",
+      "time": "06-03",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 415012,
+      "month": "2026-04",
+      "drive_name": "DriveB",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=1gIwMyHiENrTw5NmG4sT-fvui13pD8g5G&sz=s0-v1",
+      "datetime_str": "2026-04-21 06:03"
+    },
+    {
       "path": "US/GEOS/2026-04/GEOS_2026-04-20_23-33.png",
       "abs_path": "screenshots/US/GEOS/2026-04/GEOS_2026-04-20_23-33.png",
       "symbol": "GEOS",
@@ -524,6 +584,21 @@
       "drive_name": "DriveG",
       "drive_public_url": "https://drive.google.com/thumbnail?id=1VTWXOELhGAFaCyVeaOCNJOh32B2t1aZf&sz=s0-v1",
       "datetime_str": "2026-04-21 05:06"
+    },
+    {
+      "path": "US/GEOS/2026-04/GEOS_2026-04-21_06-05.png",
+      "abs_path": "screenshots/US/GEOS/2026-04/GEOS_2026-04-21_06-05.png",
+      "symbol": "GEOS",
+      "market": "US",
+      "date": "2026-04-21",
+      "time": "06-05",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 397383,
+      "month": "2026-04",
+      "drive_name": "DriveG",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=17c_bWYWA0vdUhpoL3M0w_t8GlEhQJnlV&sz=s0-v1",
+      "datetime_str": "2026-04-21 06:05"
     }
   ],
   "symbols": [
@@ -548,6 +623,6 @@
     "DriveF",
     "DriveG"
   ],
-  "total_files": 35,
-  "generated_at": "2026-04-20T22:07:29"
+  "total_files": 40,
+  "generated_at": "2026-04-20T23:06:41"
 }
