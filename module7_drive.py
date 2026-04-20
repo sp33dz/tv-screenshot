@@ -687,7 +687,6 @@ class DriveManager:
             result = self._rclone_run([
                 "link",
                 remote_path,
-                "--drive-link-sharing-permission", "reader",
             ])
             if result.returncode != 0 or not result.stdout.strip():
                 logger.warning(
