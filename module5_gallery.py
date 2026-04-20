@@ -1626,13 +1626,18 @@ async function saveAnnotation() {
    Gallery data + filters (unchanged from original)
 ═══════════════════════════════════════════════ */
 function absPath(rel, entry) {
-  // Priority: 1) Google Drive public URL (stored in entry.drive_public_url)
-  //           2) GitHub Pages URL
-  //           3) file:// local
-  //           4) relative (http server)
-  if (entry && entry.drive_public_url) return entry.drive_public_url;
-  if (_GITHUB_PAGES_URL) return _GITHUB_PAGES_URL + '/screenshots/' + rel;
-  if (window.location.protocol === 'file:') return 'file:///' + _ABS_SHOT_DIR.replace(/^\//, '') + '/' + rel;
+  // Priority: 1) Google Drive public URL (must be non-empty string)
+  //           2) GitHub Pages URL (must be non-empty string)
+  //           3) file:// local (file: protocol)
+  //           4) relative path (http/https server)
+  const driveUrl = entry && entry.drive_public_url && entry.drive_public_url.trim();
+  if (driveUrl) return driveUrl;
+  const pagesUrl = typeof _GITHUB_PAGES_URL === 'string' && _GITHUB_PAGES_URL.trim();
+  if (pagesUrl) return pagesUrl + '/screenshots/' + rel;
+  if (window.location.protocol === 'file:') {
+    const base = _ABS_SHOT_DIR.replace(/\\/g, '/').replace(/^\/*/, '');
+    return 'file:///' + base + '/' + rel;
+  }
   return '../screenshots/' + rel;
 }
 
@@ -1652,7 +1657,27 @@ async function init() {
           fetch('data.json').then(r => r.json()),
           fetch('notes.json').then(r => r.json()),
         ]);
-        if (dr.status === 'fulfilled') { ALL = dr.value.entries || []; populateFilters(dr.value); updateStats(dr.value); }
+        if (dr.status === 'fulfilled' && dr.value && dr.value.entries) {
+          // Merge server entries with inline entries — deduplicate by path
+          const serverEntries = dr.value.entries || [];
+          const inlineEntries = data.entries || [];
+          const pathSet = new Set(serverEntries.map(e => e.path));
+          const merged = [...serverEntries];
+          inlineEntries.forEach(e => { if (!pathSet.has(e.path)) merged.push(e); });
+          ALL = merged;
+          // Rebuild filter sets from merged data
+          const mergedData = Object.assign({}, dr.value, {
+            entries: merged,
+            total_files: merged.length,
+            symbols: [...new Set(merged.map(e => e.symbol))].sort(),
+            markets: [...new Set(merged.map(e => e.market))].sort(),
+            months:  [...new Set(merged.map(e => e.month))].sort(),
+            tags:    [...new Set(merged.map(e => e.tag).filter(Boolean))].sort(),
+            drives:  [...new Set(merged.map(e => e.drive_name).filter(Boolean))].sort(),
+          });
+          populateFilters(mergedData);
+          updateStats(mergedData);
+        }
         if (nr.status === 'fulfilled') NOTES = nr.value;
       } catch(_) {}
     }
@@ -2030,11 +2055,20 @@ async function init() {
           fetch('data.json').then(r => r.json()),
           fetch('notes.json').then(r => r.json()),
         ]);
-        if (dr.status === 'fulfilled') {
-          ALL = dr.value.entries || [];
-          fillSymbols(dr.value.symbols || []);
-          fillTags(dr.value.tags || []);
-          fillDrives(dr.value.drives || []);
+        if (dr.status === 'fulfilled' && dr.value && dr.value.entries) {
+          // Merge server entries with inline entries — deduplicate by path
+          const serverEntries = dr.value.entries || [];
+          const inlineEntries = _INLINE_DATA.entries || [];
+          const pathSet = new Set(serverEntries.map(e => e.path));
+          const merged = [...serverEntries];
+          inlineEntries.forEach(e => { if (!pathSet.has(e.path)) merged.push(e); });
+          ALL = merged;
+          const allSyms = [...new Set(merged.map(e => e.symbol))].sort();
+          const allTags = [...new Set(merged.map(e => e.tag).filter(Boolean))].sort();
+          const allDrvs = [...new Set(merged.map(e => e.drive_name).filter(Boolean))].sort();
+          fillSymbols(allSyms);
+          fillTags(allTags);
+          fillDrives(allDrvs);
         }
         if (nr.status === 'fulfilled') NOTES = nr.value;
       } catch(_) { /* live fetch failed — using inline data */ }
@@ -2188,12 +2222,14 @@ function renderFrame() {
   const e = source[idx];
   const rel = e.path;
   let absUrl;
-  if (e.drive_public_url) {
-    absUrl = e.drive_public_url;
-  } else if (_GITHUB_PAGES_URL) {
-    absUrl = _GITHUB_PAGES_URL + '/screenshots/' + rel;
+  const driveUrl = e.drive_public_url && e.drive_public_url.trim();
+  if (driveUrl) {
+    absUrl = driveUrl;
+  } else if (typeof _GITHUB_PAGES_URL === 'string' && _GITHUB_PAGES_URL.trim()) {
+    absUrl = _GITHUB_PAGES_URL.trim() + '/screenshots/' + rel;
   } else if (window.location.protocol === 'file:') {
-    absUrl = 'file:///' + _ABS_SHOT_DIR.replace(/^\//, '') + '/' + rel;
+    const base = _ABS_SHOT_DIR.replace(/\\/g, '/').replace(/^\/*/, '');
+    absUrl = 'file:///' + base + '/' + rel;
   } else {
     absUrl = '../screenshots/' + rel;
   }
