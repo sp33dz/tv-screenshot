@@ -696,13 +696,21 @@ class DriveManager:
                 return ""
 
             share_url = result.stdout.strip()
-            # Convert Google Drive share URL to direct embed URL
+            # Parse file ID from any Google Drive URL format:
             # https://drive.google.com/file/d/FILE_ID/view?usp=sharing
-            # -> https://drive.google.com/uc?export=view&id=FILE_ID
+            # https://drive.google.com/open?id=FILE_ID
+            # https://drive.google.com/uc?id=FILE_ID
             import re as _re
+            file_id = ""
             m = _re.search(r"/d/([a-zA-Z0-9_-]+)", share_url)
             if m:
                 file_id = m.group(1)
+            else:
+                m2 = _re.search(r"[?&]id=([a-zA-Z0-9_-]+)", share_url)
+                if m2:
+                    file_id = m2.group(1)
+
+            if file_id:
                 direct_url = f"https://drive.google.com/uc?export=view&id={file_id}"
                 logger.debug("Public link: %s -> %s", remote_path, direct_url)
                 return direct_url
