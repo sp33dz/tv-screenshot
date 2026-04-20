@@ -295,8 +295,9 @@ class TelegramSender:
         line1 = f"📊 {symbol} | {market}{tag_suffix}"
 
         # --- Line 2: Thai time (ET+7) ---
-        ts_thai = dt_thai.strftime("%Y-%m-%d %H:%M")
-        line2 = f"🕐 {ts_thai} +7"
+        # --- Line 2: แสดงเวลา ET (เวลาตลาด) ไม่มี label ---
+        ts_et = dt_et.strftime("%Y-%m-%d %H:%M")
+        line2 = f"🕐 {ts_et}"
 
         # --- Line 3: drive info (optional) ---
         drive_str = ""
