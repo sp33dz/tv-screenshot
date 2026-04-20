@@ -255,8 +255,15 @@ def _rebuild_gallery_safe(gallery_manager: object) -> None:
 # on_save callback builder
 # ---------------------------------------------------------------------------
 
-def _make_on_save(storage_manager: object, gallery_manager: object):
-    """Build on_save callback wired into CoreEngine."""
+def _make_on_save(storage_manager: object):
+    """
+    Build on_save callback wired into CoreEngine.
+
+    NOTE: Gallery rebuild is intentionally NOT triggered here.
+    Gallery rebuild is handled by on_gallery_rebuild callback which fires
+    AFTER Drive sync + .driveurl sidecar written, ensuring drive_public_url
+    is populated in data.json correctly.
+    """
     def on_save(result: object) -> None:
         try:
             img_attr = getattr(result, "image", None)
@@ -281,17 +288,33 @@ def _make_on_save(storage_manager: object, gallery_manager: object):
                     tag=result.tag,             # type: ignore[attr-defined]
                 )
 
+        except Exception as exc:
+            logger.error("on_save callback error: %s", exc, exc_info=True)
+
+    return on_save
+
+
+def _make_on_gallery_rebuild(gallery_manager: object):
+    """
+    Build on_gallery_rebuild callback — fires AFTER Drive sync.
+
+    This is the correct place to trigger gallery rebuild because:
+    - .drive sidecar already written (drive_name available)
+    - .driveurl sidecar already written (drive_public_url available)
+    - gallery scan will correctly pick up drive_public_url for all symbols
+    """
+    def on_gallery_rebuild(result: object) -> None:
+        try:
             if gallery_manager is not None:
                 threading.Thread(
                     target=_rebuild_gallery_safe,
                     args=(gallery_manager,),
                     daemon=True,
                 ).start()
-
         except Exception as exc:
-            logger.error("on_save callback error: %s", exc, exc_info=True)
+            logger.error("on_gallery_rebuild callback error: %s", exc, exc_info=True)
 
-    return on_save
+    return on_gallery_rebuild
 
 
 # ---------------------------------------------------------------------------
@@ -386,6 +409,14 @@ def _make_on_drive_sync(drive_manager: object, write_sidecar_fn: Any):
         result.drive_remote_path = sync_result.remote_path      # type: ignore[attr-defined]
         result.drive_sync_ok = sync_result.success               # type: ignore[attr-defined]
         result.drive_public_url = sync_result.drive_public_url   # type: ignore[attr-defined]
+
+        if not sync_result.drive_public_url:
+            logger.warning(
+                "drive_public_url EMPTY for %s (%s) -> %s. "
+                "rclone link may have failed or file ID could not be parsed. "
+                "Check rclone log above for 'rclone link' errors.",
+                symbol, market, drive_name,
+            )
 
         # ── Step 5: Write .driveurl sidecar (only when URL available) ────
         if sync_result.drive_public_url and filepath:
@@ -596,9 +627,9 @@ def bootstrap(config_path: str = DEFAULT_CONFIG_PATH) -> AppContext:
     engine.on_market_check = m2.is_market_open  # type: ignore[union-attr]
     logger.info("Wired: CoreEngine.on_market_check -> module2_market.is_market_open")
 
-    # ── Wire: on_save (StorageManager + gallery rebuild) ──────────────────
-    engine.on_save = _make_on_save(storage, gallery)  # type: ignore[union-attr]
-    logger.info("Wired: CoreEngine.on_save -> StorageManager + GalleryManager")
+    # ── Wire: on_save (StorageManager only — NO gallery rebuild here) ─────
+    engine.on_save = _make_on_save(storage)  # type: ignore[union-attr]
+    logger.info("Wired: CoreEngine.on_save -> StorageManager (gallery rebuild deferred to on_gallery_rebuild)")
 
     # ── Step 5: Wire on_drive_sync ────────────────────────────────────────
     if drive_manager is not None:
@@ -641,6 +672,17 @@ def bootstrap(config_path: str = DEFAULT_CONFIG_PATH) -> AppContext:
             "CoreEngine.on_telegram = None (module_telegram not imported)"
         )
 
+    # ── Step 7: Wire on_gallery_rebuild (AFTER Drive sync — ensures .driveurl sidecar exists) ──
+    if gallery is not None:
+        engine.on_gallery_rebuild = _make_on_gallery_rebuild(gallery)  # type: ignore[union-attr]
+        logger.info(
+            "Wired: CoreEngine.on_gallery_rebuild -> GalleryManager.build() "
+            "(fires AFTER Drive sync so drive_public_url is populated in data.json)"
+        )
+    else:
+        engine.on_gallery_rebuild = None  # type: ignore[union-attr]
+        logger.info("CoreEngine.on_gallery_rebuild = None (GalleryManager not available)")
+
     # ── GUIController (headless stub on Linux) ────────────────────────────
     if m4 is not None:
         gui: object = m4.GUIController(  # type: ignore[union-attr]
@@ -680,7 +722,7 @@ def bootstrap(config_path: str = DEFAULT_CONFIG_PATH) -> AppContext:
 
     logger.info("Bootstrap complete — all modules wired")
 
-    # ── Step 7: Return AppContext ──────────────────────────────────────────
+    # ── Step 8: Return AppContext ──────────────────────────────────────────
     return AppContext(
         core_engine=engine,
         storage_manager=storage,
@@ -1133,6 +1175,10 @@ def _test_bootstrap(r: _SelfTestResult) -> None:
                 r.ok("CoreEngine.on_drive_sync=None when Drive disabled (correct)")
             if getattr(ctx.core_engine, "on_telegram", "MISSING") is None:
                 r.ok("CoreEngine.on_telegram=None when Telegram disabled (correct)")
+            # on_gallery_rebuild may be None or callable depending on gallery init
+            on_gr = getattr(ctx.core_engine, "on_gallery_rebuild", "MISSING")
+            if on_gr != "MISSING":
+                r.ok("CoreEngine.on_gallery_rebuild attribute exists")
 
         except Exception as exc:
             r.fail("bootstrap()", str(exc))

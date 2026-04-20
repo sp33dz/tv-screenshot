@@ -134,6 +134,7 @@ class ScreenshotResult:
     drive_label: str = ""
     drive_remote_path: str = ""
     drive_sync_ok: bool = False
+    drive_public_url: str = ""   # Google Drive public URL (thumbnail format)
     # Telegram — populated by on_telegram callback
     telegram_sent: bool = False
 
@@ -328,6 +329,7 @@ class PlaywrightEngine:
         self._on_notify: Optional[Callable[[str, str], None]] = None
         self._on_drive_sync: Optional[Callable[[ScreenshotResult], None]] = None
         self._on_telegram: Optional[Callable[[ScreenshotResult], None]] = None
+        self._on_gallery_rebuild: Optional[Callable[[ScreenshotResult], None]] = None
 
         # TV session from env (GitHub Secret)
         self._tv_session_json: str = os.environ.get("TV_SESSION_JSON", "")
@@ -370,6 +372,16 @@ class PlaywrightEngine:
         """
         self._on_telegram = cb
 
+    def set_gallery_rebuild_callback(
+        self, cb: Optional[Callable[[ScreenshotResult], None]]
+    ) -> None:
+        """
+        Attach gallery rebuild callback.
+        Fired LAST — after Drive sync + .driveurl sidecar written.
+        This ensures drive_public_url is available when gallery scans files.
+        """
+        self._on_gallery_rebuild = cb
+
     def _notify(self, title: str, msg: str) -> None:
         """Fire notification callback safely."""
         if self._on_notify:
@@ -393,6 +405,14 @@ class PlaywrightEngine:
                 self._on_telegram(result)
             except Exception as exc:
                 logger.warning("on_telegram callback error: %s", exc)
+
+    def _fire_gallery_rebuild(self, result: ScreenshotResult) -> None:
+        """Fire gallery rebuild callback safely — called AFTER Drive sync."""
+        if self._on_gallery_rebuild and result.success:
+            try:
+                self._on_gallery_rebuild(result)
+            except Exception as exc:
+                logger.warning("on_gallery_rebuild callback error: %s", exc)
 
     def _get_profile_dir(self, profile: str) -> str:
         """
@@ -552,6 +572,9 @@ class PlaywrightEngine:
 
                 # ── 3. Telegram ───────────────────────────────────────
                 self._fire_telegram(result)
+
+                # ── 4. Gallery rebuild (LAST — after .driveurl sidecar written) ──
+                self._fire_gallery_rebuild(result)
 
                 self._notify(
                     f"OK {symbol}",
@@ -953,6 +976,7 @@ class CoreEngine:
         self.on_market_check: Optional[Callable[[str, datetime], bool]] = None
         self.on_drive_sync: Optional[Callable[[ScreenshotResult], None]] = None
         self.on_telegram: Optional[Callable[[ScreenshotResult], None]] = None
+        self.on_gallery_rebuild: Optional[Callable[[ScreenshotResult], None]] = None
 
         logger.info("CoreEngine initialized (platform: %s)", sys.platform)
 
@@ -969,6 +993,7 @@ class CoreEngine:
         pw_engine.set_notify_callback(self.on_notify)
         pw_engine.set_drive_sync_callback(self.on_drive_sync)
         pw_engine.set_telegram_callback(self.on_telegram)
+        pw_engine.set_gallery_rebuild_callback(self.on_gallery_rebuild)
         return pw_engine
 
     def _on_candle_close(self, candle_time: datetime) -> None:
