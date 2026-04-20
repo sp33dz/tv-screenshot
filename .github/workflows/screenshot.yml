@@ -112,6 +112,17 @@ jobs:
                   raise SystemExit(1)
           PY_EOF
 
+      - name: Restore sidecar files from repo
+        run: |
+          # สร้าง folder structure จาก sidecar ที่อยู่ใน repo
+          # ทำให้ gallery scan เจอรูปเก่าทั้งหมด ไม่ใช่แค่รูปล่าสุด
+          if [ -d screenshots ]; then
+            echo "Sidecar files in repo:"
+            find screenshots/ -name "*.drive" -o -name "*.driveurl" 2>/dev/null | wc -l
+          else
+            echo "No screenshots/ folder in repo yet"
+          fi
+
       - name: Run screenshot
         id: run_screenshot
         continue-on-error: true
@@ -151,7 +162,7 @@ jobs:
           # gallery HTML + data.json
           git add gallery/ --ignore-errors || true
 
-          # sidecar files (.drive และ .driveurl) เพื่อให้ gallery อ่าน Drive URL ได้
+          # sidecar files (.drive and .driveurl) — ให้ gallery อ่าน Drive URL ได้
           find screenshots/ -name "*.drive" -o -name "*.driveurl" 2>/dev/null \
             | xargs git add --ignore-errors 2>/dev/null || true
 
