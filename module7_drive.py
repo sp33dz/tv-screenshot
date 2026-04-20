@@ -721,18 +721,46 @@ class DriveManager:
                 return ""
 
             share_url = result.stdout.strip()
+            logger.info("rclone link raw output for %s: %s", remote_path, share_url)
             # Parse file ID from any Google Drive URL format:
             # https://drive.google.com/file/d/FILE_ID/view?usp=sharing
             # https://drive.google.com/open?id=FILE_ID
             # https://drive.google.com/uc?id=FILE_ID
+            #
+            # NOTE: Google Drive file IDs contain ONLY [a-zA-Z0-9-].
+            # Do NOT include underscore (_) in the pattern — it causes
+            # incorrect capture when the URL path contains __ separators
+            # (e.g. usp=sharing__authuser=0 style parameters).
             file_id = ""
-            m = _re.search(r"/d/([a-zA-Z0-9_-]+)", share_url)
+            m = _re.search(r"/d/([a-zA-Z0-9-]{25,})", share_url)
             if m:
                 file_id = m.group(1)
             else:
-                m2 = _re.search(r"[?&]id=([a-zA-Z0-9_-]+)", share_url)
+                m2 = _re.search(r"[?&]id=([a-zA-Z0-9-]{25,})", share_url)
                 if m2:
                     file_id = m2.group(1)
+
+            if not file_id:
+                # Fallback: try rclone backend publiclink (returns raw file ID directly)
+                logger.warning(
+                    "get_public_link: regex failed to extract file ID from URL=%r — "
+                    "trying rclone backend publiclink as fallback",
+                    share_url,
+                )
+                try:
+                    bp = self._rclone_run(["backend", "publiclink", remote_path])
+                    if bp.returncode == 0 and bp.stdout.strip():
+                        bp_url = bp.stdout.strip()
+                        logger.info("backend publiclink output: %s", bp_url)
+                        mb = _re.search(r"/d/([a-zA-Z0-9-]{25,})", bp_url)
+                        if mb:
+                            file_id = mb.group(1)
+                        else:
+                            mb2 = _re.search(r"[?&]id=([a-zA-Z0-9-]{25,})", bp_url)
+                            if mb2:
+                                file_id = mb2.group(1)
+                except Exception as bp_exc:
+                    logger.warning("backend publiclink fallback error: %s", bp_exc)
 
             if file_id:
                 # ใช้ thumbnail URL — แสดงรูปใน <img> ได้โดยตรง ไม่มี CORS block
