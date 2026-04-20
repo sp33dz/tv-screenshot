@@ -112,6 +112,19 @@ jobs:
                   raise SystemExit(1)
           PY_EOF
 
+      - name: Restore gallery data.json for history merge
+        run: |
+          # gallery/data.json is committed to the repo and contains the full
+          # accumulated image index from all previous runs.  Ensure the gallery/
+          # directory exists so GalleryManager can read it before building.
+          mkdir -p gallery
+          if [ -f gallery/data.json ]; then
+            ENTRY_COUNT=$(python -c "import json,sys; d=json.load(open('gallery/data.json')); print(d.get('total_files',0))" 2>/dev/null || echo "?")
+            echo "Existing gallery/data.json found — ${ENTRY_COUNT} historical entries will be preserved"
+          else
+            echo "No existing gallery/data.json — first run, starting fresh"
+          fi
+
       - name: Run screenshot
         id: run_screenshot
         continue-on-error: true
@@ -162,7 +175,8 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # gallery HTML + data.json
+          # gallery HTML + data.json  (data.json คือ accumulated index — MUST commit every run)
+          git add gallery/data.json gallery/index.html gallery/replay.html --ignore-errors || true
           git add gallery/ --ignore-errors || true
 
           # sidecar files (.drive และ .driveurl) เพื่อให้ gallery อ่าน Drive URL ได้
@@ -173,9 +187,11 @@ jobs:
             echo "No new files — skipping commit"
           else
             TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M UTC")
-            git commit -m "chore: auto-update gallery ${TIMESTAMP} [skip ci]"
+            # Count total entries in updated data.json
+            TOTAL=$(python -c "import json; d=json.load(open('gallery/data.json')); print(d.get('total_files',0))" 2>/dev/null || echo "?")
+            git commit -m "chore: auto-update gallery ${TIMESTAMP} [${TOTAL} entries] [skip ci]"
             git push origin HEAD
-            echo "Gallery pushed to repo"
+            echo "Gallery pushed to repo (${TOTAL} total entries in data.json)"
           fi
 
       - name: Upload screenshots artifact
