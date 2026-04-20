@@ -317,8 +317,11 @@ def _make_on_drive_sync(drive_manager: object, write_sidecar_fn: Any):
             logger.warning("on_drive_sync: no filepath in result for %s", symbol)
             return
 
+        # ── Step 1: Assign drive (isolated try — never skip sidecar) ─────
+        assignment = None
+        drive_name: str = ""
+        drive_label: str = ""
         try:
-            # 1. Assign drive
             assignment = drive_manager.assign_drive(symbol, market)  # type: ignore[union-attr]
             if assignment is None:
                 logger.warning(
@@ -326,11 +329,32 @@ def _make_on_drive_sync(drive_manager: object, write_sidecar_fn: Any):
                     symbol, market,
                 )
                 return
+            drive_name = assignment.drive.name
+            drive_label = assignment.drive.label
+        except Exception as exc_assign:
+            logger.error(
+                "on_drive_sync assign_drive error for %s: %s", symbol, exc_assign,
+                exc_info=True,
+            )
+            return  # no drive → nothing to write
 
-            drive_name: str = assignment.drive.name
-            drive_label: str = assignment.drive.label
+        # ── Step 2: Write .drive sidecar IMMEDIATELY after assignment ────
+        # This ensures drive_name is recorded even if rclone sync fails later
+        if write_sidecar_fn is not None:
+            try:
+                write_sidecar_fn(filepath, drive_name)
+            except Exception as exc_sc:
+                logger.warning(
+                    "write_drive_sidecar error for %s: %s", filepath, exc_sc
+                )
 
-            # 2. Sync file to Google Drive
+        # Always populate drive_name / drive_label on result (even before sync)
+        result.drive_name = drive_name    # type: ignore[attr-defined]
+        result.drive_label = drive_label  # type: ignore[attr-defined]
+
+        # ── Step 3: Sync file to Google Drive (isolated try) ─────────────
+        sync_result = None
+        try:
             sync_result = drive_manager.sync_file(  # type: ignore[union-attr]
                 filepath, assignment, "screenshots"
             )
@@ -347,37 +371,30 @@ def _make_on_drive_sync(drive_manager: object, write_sidecar_fn: Any):
                     symbol, drive_name, sync_result.error,
                 )
 
-            # 3. Write .drive sidecar for gallery filter
-            if write_sidecar_fn is not None:
-                try:
-                    write_sidecar_fn(filepath, drive_name)
-                except Exception as exc_sc:
-                    logger.warning(
-                        "write_drive_sidecar error for %s: %s", filepath, exc_sc
-                    )
-
-            # 4. Populate result fields (consumed by on_telegram + health checker)
-            result.drive_name = drive_name                          # type: ignore[attr-defined]
-            result.drive_label = drive_label                        # type: ignore[attr-defined]
-            result.drive_remote_path = sync_result.remote_path     # type: ignore[attr-defined]
-            result.drive_sync_ok = sync_result.success              # type: ignore[attr-defined]
-            result.drive_public_url = getattr(sync_result, "drive_public_url", "")  # type: ignore[attr-defined]
-
-            # 5. Write .driveurl sidecar so gallery can embed Drive image URL
-            pub_url = getattr(sync_result, "drive_public_url", "")
-            if pub_url and filepath:
-                try:
-                    from pathlib import Path as _Path
-                    sidecar = _Path(filepath).with_suffix(".driveurl")
-                    sidecar.write_text(pub_url, encoding="utf-8")
-                    logger.debug("driveurl sidecar written: %s", sidecar)
-                except Exception as exc_url:
-                    logger.warning("driveurl sidecar write error: %s", exc_url)
-
-        except Exception as exc:
+        except Exception as exc_sync:
             logger.error(
-                "on_drive_sync error for %s: %s", symbol, exc, exc_info=True
+                "on_drive_sync sync_file error for %s: %s", symbol, exc_sync,
+                exc_info=True,
             )
+            # drive_name sidecar already written above — populate partial result
+            result.drive_remote_path = ""    # type: ignore[attr-defined]
+            result.drive_sync_ok = False     # type: ignore[attr-defined]
+            result.drive_public_url = ""     # type: ignore[attr-defined]
+            return
+
+        # ── Step 4: Populate result fields from sync ──────────────────────
+        result.drive_remote_path = sync_result.remote_path      # type: ignore[attr-defined]
+        result.drive_sync_ok = sync_result.success               # type: ignore[attr-defined]
+        result.drive_public_url = sync_result.drive_public_url   # type: ignore[attr-defined]
+
+        # ── Step 5: Write .driveurl sidecar (only when URL available) ────
+        if sync_result.drive_public_url and filepath:
+            try:
+                sidecar = Path(filepath).with_suffix(".driveurl")
+                sidecar.write_text(sync_result.drive_public_url, encoding="utf-8")
+                logger.debug("driveurl sidecar written: %s", sidecar)
+            except Exception as exc_url:
+                logger.warning("driveurl sidecar write error: %s", exc_url)
 
     return on_drive_sync
 

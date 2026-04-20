@@ -271,30 +271,52 @@ class DriveManager:
         ----------
         local_path      : path to local file
         assignment      : DriveAssignment from assign_drive()
-        remote_subfolder: subfolder on Drive (e.g. "screenshots/CRYPTO/BTC/2026-04")
+        remote_subfolder: top-level subfolder on Drive (e.g. "screenshots").
+                          The full remote path preserves MARKET/SYMBOL/YYYY-MM/
+                          hierarchy by reading the local path structure relative
+                          to the screenshot root folder.
 
-        Returns SyncResult.
+        Returns SyncResult. Never raises — all exceptions are caught and
+        returned as SyncResult(success=False, error=...).
         """
         drive = assignment.drive
         local_path = Path(local_path)
+        remote = ""  # define early so except block can always reference it
 
-        if not local_path.exists():
-            return SyncResult(
-                success=False,
-                drive_name=drive.name,
-                remote_path="",
-                local_path=str(local_path),
-                error=f"Local file not found: {local_path}",
-            )
-
-        # Build remote path: remote:subfolder/filename
-        if remote_subfolder:
-            remote = f"{drive.rclone_remote}{remote_subfolder}/{local_path.name}"
-        else:
-            remote = f"{drive.rclone_remote}{local_path.name}"
-
-        start = time.monotonic()
         try:
+            if not local_path.exists():
+                return SyncResult(
+                    success=False,
+                    drive_name=drive.name,
+                    remote_path="",
+                    local_path=str(local_path),
+                    error=f"Local file not found: {local_path}",
+                )
+
+            # Build remote path preserving MARKET/SYMBOL/YYYY-MM/ hierarchy.
+            # local_path is e.g. screenshots/CRYPTO/BTCTHB/2026-04/BTCTHB_2026-04-20_18-05.png
+            # We try to detect the screenshots root by looking for the MARKET folder
+            # (CRYPTO or US) in the path parts, then preserve everything from there.
+            if remote_subfolder:
+                # Try to preserve sub-path: MARKET/SYMBOL/YYYY-MM/filename
+                parts = local_path.parts  # tuple of path components
+                # Find index of first part that looks like a market (CRYPTO / US / etc.)
+                _MARKET_NAMES = {"CRYPTO", "US", "FOREX", "INDICES", "FUTURES"}
+                sub_path = ""
+                for i, part in enumerate(parts):
+                    if part.upper() in _MARKET_NAMES:
+                        # Rebuild from market/ onwards: MARKET/SYMBOL/YYYY-MM/file
+                        sub_path = "/".join(parts[i:])
+                        break
+                if sub_path:
+                    remote = f"{drive.rclone_remote}{remote_subfolder}/{sub_path}"
+                else:
+                    # Fallback: flat upload under subfolder
+                    remote = f"{drive.rclone_remote}{remote_subfolder}/{local_path.name}"
+            else:
+                remote = f"{drive.rclone_remote}{local_path.name}"
+
+            start = time.monotonic()
             result = self._rclone_run(
                 ["copyto", str(local_path), remote, "--progress=false"]
             )
@@ -302,13 +324,16 @@ class DriveManager:
 
             if result.returncode == 0:
                 # Update usage estimate
-                with self._lock:
-                    drive.used_bytes += local_path.stat().st_size
+                try:
+                    with self._lock:
+                        drive.used_bytes += local_path.stat().st_size
+                except OSError:
+                    pass
                 logger.info(
                     "Drive sync OK: %s → %s (%.1fs)",
                     local_path.name, remote, duration,
                 )
-                # Get public link for gallery
+                # Get public link for gallery (never raises)
                 public_url = self.get_public_link(remote)
                 return SyncResult(
                     success=True,
@@ -335,14 +360,14 @@ class DriveManager:
                 )
 
         except Exception as exc:
-            duration = time.monotonic() - start
-            logger.error("sync_file exception: %s", exc, exc_info=True)
+            duration = time.monotonic() - (start if "start" in dir() else time.monotonic())
+            logger.error("sync_file exception for %s: %s", local_path.name, exc, exc_info=True)
             return SyncResult(
                 success=False,
                 drive_name=drive.name,
                 remote_path=remote,
                 local_path=str(local_path),
-                duration_sec=duration,
+                duration_sec=0.0,
                 error=str(exc),
             )
 
@@ -679,19 +704,19 @@ class DriveManager:
 
         Parameters
         ----------
-        remote_path : full rclone remote path e.g. "gdrive1:screenshots/US/AAPL/2026-04/AAPL_2026-04-19_13-35.png"
+        remote_path : full rclone remote path e.g. "gdrive1:screenshots/CRYPTO/BTCTHB/2026-04/BTCTHB.png"
 
-        Returns direct URL string, or "" on failure.
+        Returns direct URL string, or "" on failure. Never raises.
         """
-        try:
-            result = self._rclone_run([
-                "link",
-                remote_path,
-            ])
+        import re as _re
+
+        def _try_get_link() -> str:
+            result = self._rclone_run(["link", remote_path])
             if result.returncode != 0 or not result.stdout.strip():
+                err = result.stderr.strip() or f"rc={result.returncode}"
                 logger.warning(
-                    "rclone link failed for %s [rc=%d]: %s",
-                    remote_path, result.returncode, result.stderr.strip(),
+                    "rclone link failed for %s: %s",
+                    remote_path, err,
                 )
                 return ""
 
@@ -700,7 +725,6 @@ class DriveManager:
             # https://drive.google.com/file/d/FILE_ID/view?usp=sharing
             # https://drive.google.com/open?id=FILE_ID
             # https://drive.google.com/uc?id=FILE_ID
-            import re as _re
             file_id = ""
             m = _re.search(r"/d/([a-zA-Z0-9_-]+)", share_url)
             if m:
@@ -719,9 +743,25 @@ class DriveManager:
             logger.warning("Could not parse file ID from: %s", share_url)
             return share_url
 
-        except Exception as exc:
-            logger.warning("get_public_link error for %s: %s", remote_path, exc)
-            return ""
+        # Retry once on failure (rclone link can flake on first call)
+        for attempt in range(1, 3):
+            try:
+                url = _try_get_link()
+                if url:
+                    return url
+                if attempt < 2:
+                    logger.debug("get_public_link: retry %d for %s", attempt + 1, remote_path)
+                    time.sleep(2)
+            except Exception as exc:
+                logger.warning(
+                    "get_public_link attempt %d error for %s: %s",
+                    attempt, remote_path, exc,
+                )
+                if attempt < 2:
+                    time.sleep(2)
+
+        logger.warning("get_public_link: all attempts failed for %s", remote_path)
+        return ""
 
     # ------------------------------------------------------------------
     # Internal — config parsing
