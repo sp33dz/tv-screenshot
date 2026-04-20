@@ -727,16 +727,19 @@ class DriveManager:
             # https://drive.google.com/open?id=FILE_ID
             # https://drive.google.com/uc?id=FILE_ID
             #
-            # NOTE: Google Drive file IDs contain ONLY [a-zA-Z0-9-].
-            # Do NOT include underscore (_) in the pattern — it causes
-            # incorrect capture when the URL path contains __ separators
-            # (e.g. usp=sharing__authuser=0 style parameters).
+            # NOTE: Google Drive file IDs contain [a-zA-Z0-9_-].
+            # Underscore (_) MUST be included — real IDs such as
+            # "1bKNo_P1mV1tzzyyoMTyRlbuGCGDu5XqM" contain underscores.
+            # The regex stops naturally at the first character outside the
+            # class (e.g. "&", "/", "?"), so __ separators in query params
+            # such as "usp=sharing__authuser=0" are NOT captured because
+            # those follow a separate "&" delimiter, not inside the file ID.
             file_id = ""
-            m = _re.search(r"/d/([a-zA-Z0-9-]{25,})", share_url)
+            m = _re.search(r"/d/([a-zA-Z0-9_-]{25,})", share_url)
             if m:
                 file_id = m.group(1)
             else:
-                m2 = _re.search(r"[?&]id=([a-zA-Z0-9-]{25,})", share_url)
+                m2 = _re.search(r"[?&]id=([a-zA-Z0-9_-]{25,})", share_url)
                 if m2:
                     file_id = m2.group(1)
 
@@ -752,11 +755,11 @@ class DriveManager:
                     if bp.returncode == 0 and bp.stdout.strip():
                         bp_url = bp.stdout.strip()
                         logger.info("backend publiclink output: %s", bp_url)
-                        mb = _re.search(r"/d/([a-zA-Z0-9-]{25,})", bp_url)
+                        mb = _re.search(r"/d/([a-zA-Z0-9_-]{25,})", bp_url)
                         if mb:
                             file_id = mb.group(1)
                         else:
-                            mb2 = _re.search(r"[?&]id=([a-zA-Z0-9-]{25,})", bp_url)
+                            mb2 = _re.search(r"[?&]id=([a-zA-Z0-9_-]{25,})", bp_url)
                             if mb2:
                                 file_id = mb2.group(1)
                 except Exception as bp_exc:
