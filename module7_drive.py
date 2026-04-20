@@ -764,7 +764,7 @@ class DriveManager:
 
             if file_id:
                 # ใช้ thumbnail URL — แสดงรูปใน <img> ได้โดยตรง ไม่มี CORS block
-                direct_url = f"https://drive.google.com/thumbnail?id={file_id}&sz=s1600-rw-v1"
+                direct_url = f"https://drive.google.com/thumbnail?id={file_id}&sz=s0-v1"
                 logger.debug("Public link: %s -> %s", remote_path, direct_url)
                 return direct_url
 
