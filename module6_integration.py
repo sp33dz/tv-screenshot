@@ -361,13 +361,15 @@ def _make_on_drive_sync(drive_manager: object, write_sidecar_fn: Any):
             result.drive_label = drive_label                        # type: ignore[attr-defined]
             result.drive_remote_path = sync_result.remote_path     # type: ignore[attr-defined]
             result.drive_sync_ok = sync_result.success              # type: ignore[attr-defined]
-            result.drive_public_url = sync_result.drive_public_url  # type: ignore[attr-defined]
+            result.drive_public_url = getattr(sync_result, "drive_public_url", "")  # type: ignore[attr-defined]
 
             # 5. Write .driveurl sidecar so gallery can embed Drive image URL
-            if sync_result.drive_public_url and filepath:
+            pub_url = getattr(sync_result, "drive_public_url", "")
+            if pub_url and filepath:
                 try:
-                    sidecar = Path(filepath).with_suffix(".driveurl")
-                    sidecar.write_text(sync_result.drive_public_url, encoding="utf-8")
+                    from pathlib import Path as _Path
+                    sidecar = _Path(filepath).with_suffix(".driveurl")
+                    sidecar.write_text(pub_url, encoding="utf-8")
                     logger.debug("driveurl sidecar written: %s", sidecar)
                 except Exception as exc_url:
                     logger.warning("driveurl sidecar write error: %s", exc_url)
