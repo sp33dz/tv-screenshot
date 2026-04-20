@@ -288,16 +288,15 @@ class TelegramSender:
 
         # Thai display time = ET + 7 hours directly
         from datetime import timedelta as _td
-        dt_thai = dt_et + _td(hours=7)
+        dt_thai = dt_et + _td(hours=0)
 
         # --- Line 1: symbol + market + optional tag ---
         tag_suffix = f" [{tag}]" if tag else ""
         line1 = f"📊 {symbol} | {market}{tag_suffix}"
 
         # --- Line 2: Thai time (ET+7) ---
-        # --- Line 2: แสดงเวลา ET (เวลาตลาด) ไม่มี label ---
-        ts_et = dt_et.strftime("%Y-%m-%d %H:%M")
-        line2 = f"🕐 {ts_et}"
+        ts_thai = dt_thai.strftime("%Y-%m-%d %H:%M")
+        line2 = f"🕐 {ts_thai}"
 
         # --- Line 3: drive info (optional) ---
         drive_str = ""
