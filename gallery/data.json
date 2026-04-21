@@ -226,6 +226,21 @@
       "datetime_str": "2026-04-21 13:03"
     },
     {
+      "path": "US/AIXI/2026-04/AIXI_2026-04-21_14-04.png",
+      "abs_path": "screenshots/US/AIXI/2026-04/AIXI_2026-04-21_14-04.png",
+      "symbol": "AIXI",
+      "market": "US",
+      "date": "2026-04-21",
+      "time": "14-04",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 412254,
+      "month": "2026-04",
+      "drive_name": "DriveD",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=1ZZTxYnS-UemGHtzujgBvLlcxkLwyBQYJ&sz=s0-rw-v1",
+      "datetime_str": "2026-04-21 14:04"
+    },
+    {
       "path": "US/AMPX/2026-04/AMPX_2026-04-20_23-32.png",
       "abs_path": "screenshots/US/AMPX/2026-04/AMPX_2026-04-20_23-32.png",
       "symbol": "AMPX",
@@ -449,6 +464,21 @@
       "drive_name": "DriveF",
       "drive_public_url": "https://drive.google.com/thumbnail?id=1w70jP_fxpLtj-_9yHgm5-rbnzZ3yUUrs&sz=s0-rw-v1",
       "datetime_str": "2026-04-21 13:04"
+    },
+    {
+      "path": "US/AMPX/2026-04/AMPX_2026-04-21_14-04.png",
+      "abs_path": "screenshots/US/AMPX/2026-04/AMPX_2026-04-21_14-04.png",
+      "symbol": "AMPX",
+      "market": "US",
+      "date": "2026-04-21",
+      "time": "14-04",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 396423,
+      "month": "2026-04",
+      "drive_name": "DriveF",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=1zANF1VJHwqHJrnt_aoMStZqRQwAjDCdn&sz=s0-rw-v1",
+      "datetime_str": "2026-04-21 14:04"
     },
     {
       "path": "CRYPTO/BTCTHB/2026-04/BTCTHB_2026-04-20_23-33.png",
@@ -676,6 +706,21 @@
       "datetime_str": "2026-04-21 13:06"
     },
     {
+      "path": "CRYPTO/BTCTHB/2026-04/BTCTHB_2026-04-21_14-05.png",
+      "abs_path": "screenshots/CRYPTO/BTCTHB/2026-04/BTCTHB_2026-04-21_14-05.png",
+      "symbol": "BTCTHB",
+      "market": "CRYPTO",
+      "date": "2026-04-21",
+      "time": "14-05",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 414604,
+      "month": "2026-04",
+      "drive_name": "DriveA",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=11nFJxyWG961VnFhV1FhXtdG3bKM83ScV&sz=s0-rw-v1",
+      "datetime_str": "2026-04-21 14:05"
+    },
+    {
       "path": "US/ENPH/2026-04/ENPH_2026-04-20_23-31.png",
       "abs_path": "screenshots/US/ENPH/2026-04/ENPH_2026-04-20_23-31.png",
       "symbol": "ENPH",
@@ -901,6 +946,21 @@
       "datetime_str": "2026-04-21 13:03"
     },
     {
+      "path": "US/ENPH/2026-04/ENPH_2026-04-21_14-03.png",
+      "abs_path": "screenshots/US/ENPH/2026-04/ENPH_2026-04-21_14-03.png",
+      "symbol": "ENPH",
+      "market": "US",
+      "date": "2026-04-21",
+      "time": "14-03",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 412695,
+      "month": "2026-04",
+      "drive_name": "DriveB",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=1IUPklETDikdFJlFYID2NrcPzNFFEUSyt&sz=s0-rw-v1",
+      "datetime_str": "2026-04-21 14:03"
+    },
+    {
       "path": "US/GEOS/2026-04/GEOS_2026-04-20_23-33.png",
       "abs_path": "screenshots/US/GEOS/2026-04/GEOS_2026-04-20_23-33.png",
       "symbol": "GEOS",
@@ -1124,6 +1184,21 @@
       "drive_name": "DriveG",
       "drive_public_url": "https://drive.google.com/thumbnail?id=1u7J6uAr9LOqFoNVe9y862NvxTvvpVzOB&sz=s0-rw-v1",
       "datetime_str": "2026-04-21 13:05"
+    },
+    {
+      "path": "US/GEOS/2026-04/GEOS_2026-04-21_14-05.png",
+      "abs_path": "screenshots/US/GEOS/2026-04/GEOS_2026-04-21_14-05.png",
+      "symbol": "GEOS",
+      "market": "US",
+      "date": "2026-04-21",
+      "time": "14-05",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 396631,
+      "month": "2026-04",
+      "drive_name": "DriveG",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=1Dg6ZWGdwYkghh_LWgBurPXfweSn36-Ad&sz=s0-rw-v1",
+      "datetime_str": "2026-04-21 14:05"
     }
   ],
   "symbols": [
@@ -1148,6 +1223,6 @@
     "DriveF",
     "DriveG"
   ],
-  "total_files": 75,
-  "generated_at": "2026-04-21T06:06:44"
+  "total_files": 80,
+  "generated_at": "2026-04-21T07:05:53"
 }
