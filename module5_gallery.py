@@ -2037,18 +2037,40 @@ body.theatre #btn-theatre { border-color: var(--accent); color: var(--accent); }
 /* ── Double-buffer: img-a / img-b วางซ้อนกัน absolute ── */
 #viewport .replay-buf {
   position: absolute;
+  /* ขนาดตั้งต้น — JS จะ override transform ด้วย zoom/pan */
   max-width: 100%; max-height: 100%;
   object-fit: contain;
   user-select: none;
   display: block;
-  top: 50%; left: 50%;
-  transform: translate(-50%, -50%);
+  top: 0; left: 0;           /* origin ไว้ที่ 0,0 — JS ดูแล translate */
+  transform-origin: 0 0;     /* zoom จากมุมบนซ้าย — JS คำนวณ offset */
   transition: opacity 0.15s ease-in-out;
-  will-change: opacity;
-  cursor: pointer;
+  will-change: transform, opacity;
+  cursor: zoom-in;
 }
+/* เมื่อ pan mode */
+body.panning #viewport .replay-buf { cursor: grabbing; }
 #buf-a { opacity: 1; z-index: 2; }
 #buf-b { opacity: 0; z-index: 1; }
+
+/* ── Zoom badge ── */
+#zoom-badge {
+  position: absolute; bottom: 12px; right: 14px;
+  background: rgba(0,0,0,0.6); color: #e6edf3;
+  font-size: 12px; padding: 3px 8px; border-radius: 4px;
+  pointer-events: none; z-index: 8;
+  opacity: 0; transition: opacity 0.3s;
+}
+#zoom-badge.visible { opacity: 1; }
+/* ปุ่ม reset zoom */
+#btn-zoom-reset {
+  position: absolute; bottom: 12px; right: 72px;
+  background: rgba(0,0,0,0.6); color: #e6edf3; border: 1px solid #30363d;
+  font-size: 11px; padding: 3px 8px; border-radius: 4px; cursor: pointer;
+  z-index: 8; opacity: 0; transition: opacity 0.3s;
+}
+#btn-zoom-reset.visible { opacity: 1; }
+#btn-zoom-reset:hover { border-color: var(--accent); color: var(--accent); }
 
 /* ── Overlay info ── */
 #overlay {
@@ -2186,14 +2208,15 @@ body.theatre #viewport:hover #play-hud  { opacity: 1; }
   <div id="no-img">Select a symbol to begin replay</div>
   <!-- Double-buffer: buf-a แสดงอยู่, buf-b โหลดถัดไป แล้ว swap -->
   <!-- คลิกรูปเพื่อเปิดต้นฉบับ (s0-v1) ใน tab ใหม่ -->
-  <img id="buf-a" class="replay-buf" src="" alt="" style="display:none"
-       onclick="openOriginal()" title="Click to open original image"/>
-  <img id="buf-b" class="replay-buf" src="" alt="" style="display:none"
-       onclick="openOriginal()" title="Click to open original image"/>
+  <img id="buf-a" class="replay-buf" src="" alt="" style="display:none"/>
+  <img id="buf-b" class="replay-buf" src="" alt="" style="display:none"/>
   <!-- loading spinner -->
   <div id="loading-ring" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
        width:40px;height:40px;border:3px solid #30363d;border-top-color:var(--accent);
        border-radius:50%;animation:spin 0.7s linear infinite;z-index:10;"></div>
+  <!-- Zoom badge + reset -->
+  <div id="zoom-badge">100%</div>
+  <button id="btn-zoom-reset" onclick="zoomReset()" title="Reset zoom [0]">Reset zoom</button>
   <div id="overlay" style="display:none">
     <div id="ov-symbol" style="font-weight:600;color:var(--accent)"></div>
     <div id="ov-datetime" style="color:var(--text)"></div>
@@ -2274,6 +2297,19 @@ const bufEl = {
 // Preload cache: Map<absUrl, HTMLImageElement>
 const imgCache = new Map();
 
+// ── Zoom / Pan state (คงอยู่ข้ามภาพ ไม่ reset เมื่อเปลี่ยน frame) ──
+let vpZoom   = 1.0;   // scale factor (1.0 = fit)
+let vpPanX   = 0;     // pixel offset X (at zoom=1 space)
+let vpPanY   = 0;     // pixel offset Y (at zoom=1 space)
+let vpFitW   = 0;     // rendered width  ของภาพที่ zoom=1
+let vpFitH   = 0;     // rendered height ของภาพที่ zoom=1
+let isPanning   = false;
+let panStartX   = 0;
+let panStartY   = 0;
+let zoomBadgeTimer = null;
+
+const _vp = document.getElementById('viewport');
+
 // ── URL helper ─────────────────────────────────────────────────────
 function getAbsUrl(e) {
   const driveUrl = e.drive_public_url && e.drive_public_url.trim();
@@ -2302,12 +2338,163 @@ function getOriginalUrl(e) {
   return getAbsUrl(e);
 }
 
-// เปิดรูปต้นฉบับใน tab ใหม่เมื่อคลิกที่รูป
+// เปิดรูปต้นฉบับใน tab ใหม่ — เรียกจาก dblclick ใน viewport
 function openOriginal() {
   if (!source.length) return;
   const url = getOriginalUrl(source[idx]);
   if (url) window.open(url, '_blank', 'noopener');
 }
+// double-click บน viewport เปิดต้นฉบับ
+_vp.addEventListener('dblclick', e => {
+  if (e.target.closest('#play-hud')) return;
+  openOriginal();
+});
+
+// ── Zoom / Pan engine ──────────────────────────────────────────────
+// คำนวณขนาด fit-to-viewport ของภาพ (naturalWidth x naturalHeight)
+function calcFit(natW, natH) {
+  const vr = _vp.getBoundingClientRect();
+  const scale = Math.min(vr.width / natW, vr.height / natH, 1);
+  return { w: natW * scale, h: natH * scale, scale };
+}
+
+// apply zoom+pan transform ให้ทั้งสอง buffer พร้อมกัน
+function applyZoom() {
+  const vr  = _vp.getBoundingClientRect();
+  // center offset: ทำให้ภาพที่ zoom=1 อยู่กลาง viewport
+  const cx  = (vr.width  - vpFitW) / 2;
+  const cy  = (vr.height - vpFitH) / 2;
+  const tx  = cx + vpPanX;
+  const ty  = cy + vpPanY;
+  const t   = `translate(${tx}px,${ty}px) scale(${vpZoom})`;
+  bufEl.a.style.transform = t;
+  bufEl.b.style.transform = t;
+
+  // badge
+  const pct  = Math.round(vpZoom * 100) + '%';
+  const badge = document.getElementById('zoom-badge');
+  const resetBtn = document.getElementById('btn-zoom-reset');
+  badge.textContent = pct;
+  const zoomed = vpZoom !== 1.0 || vpPanX !== 0 || vpPanY !== 0;
+  badge.classList.toggle('visible', true);
+  resetBtn.classList.toggle('visible', zoomed);
+  // auto-hide badge หลัง 1.5s
+  clearTimeout(zoomBadgeTimer);
+  zoomBadgeTimer = setTimeout(() => badge.classList.remove('visible'), 1500);
+}
+
+// กำหนด fit size ให้ buffer (เรียกเมื่อภาพโหลดสำเร็จ)
+function setFitFromImg(imgEl) {
+  if (!imgEl.naturalWidth) return;
+  const f = calcFit(imgEl.naturalWidth, imgEl.naturalHeight);
+  vpFitW = f.w;
+  vpFitH = f.h;
+  // set CSS size ให้ buf ตรงกับ fit size (ก่อน zoom)
+  bufEl.a.style.width  = vpFitW + 'px';
+  bufEl.a.style.height = vpFitH + 'px';
+  bufEl.b.style.width  = vpFitW + 'px';
+  bufEl.b.style.height = vpFitH + 'px';
+  applyZoom();
+}
+
+// reset zoom กลับ 1:1 fit, pan = 0
+function zoomReset() {
+  vpZoom = 1.0; vpPanX = 0; vpPanY = 0;
+  applyZoom();
+}
+
+// clamp pan ให้ภาพไม่หลุดออกนอก viewport มากเกินไป
+function clampPan() {
+  const vr   = _vp.getBoundingClientRect();
+  const scaledW = vpFitW * vpZoom;
+  const scaledH = vpFitH * vpZoom;
+  // อนุญาตให้เลื่อนจนเหลือ 20% ของภาพอยู่ใน viewport
+  const marginX = Math.max(scaledW * 0.2, 40);
+  const marginY = Math.max(scaledH * 0.2, 40);
+  const maxX =  (scaledW - vpFitW) / 2 + (vr.width  - vpFitW) / 2 + marginX;
+  const minX = -(scaledW - vpFitW) / 2 - (vr.width  - vpFitW) / 2 - marginX + (vr.width  - vpFitW);
+  const maxY =  (scaledH - vpFitH) / 2 + (vr.height - vpFitH) / 2 + marginY;
+  const minY = -(scaledH - vpFitH) / 2 - (vr.height - vpFitH) / 2 - marginY + (vr.height - vpFitH);
+  vpPanX = Math.min(maxX, Math.max(minX, vpPanX));
+  vpPanY = Math.min(maxY, Math.max(minY, vpPanY));
+}
+
+// ── Mouse-wheel zoom (zoom toward cursor) ─────────────────────────
+_vp.addEventListener('wheel', e => {
+  e.preventDefault();
+  const factor  = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+  const newZoom = Math.min(Math.max(vpZoom * factor, 0.5), 10);
+  if (newZoom === vpZoom) return;
+
+  // zoom toward cursor position
+  const vr = _vp.getBoundingClientRect();
+  const cx = _vp.getBoundingClientRect();
+  // cursor relative to viewport center
+  const mx = e.clientX - vr.left;
+  const my = e.clientY - vr.top;
+  // offset ของจุดใต้ cursor ก่อน scale
+  const originX = (vr.width  - vpFitW) / 2 + vpPanX;
+  const originY = (vr.height - vpFitH) / 2 + vpPanY;
+  // คำนวณตำแหน่งใน image space ก่อน zoom
+  const imgX = (mx - originX) / vpZoom;
+  const imgY = (my - originY) / vpZoom;
+  // pan ใหม่ให้จุดนั้นยังอยู่ใต้ cursor
+  vpPanX = mx - imgX * newZoom - (vr.width  - vpFitW) / 2;
+  vpPanY = my - imgY * newZoom - (vr.height - vpFitH) / 2;
+  vpZoom = newZoom;
+  clampPan();
+  applyZoom();
+}, { passive: false });
+
+// ── Mouse pan (drag ขณะ zoom > 1) ────────────────────────────────
+_vp.addEventListener('mousedown', e => {
+  // คลิกซ้ายเท่านั้น, ไม่ใช่ปุ่ม HUD
+  if (e.button !== 0) return;
+  if (e.target.closest('#play-hud')) return;
+  if (vpZoom <= 1.0) return;    // ไม่ pan ถ้ายังไม่ zoom
+  isPanning  = true;
+  panStartX  = e.clientX - vpPanX;
+  panStartY  = e.clientY - vpPanY;
+  document.body.classList.add('panning');
+  e.preventDefault();
+});
+window.addEventListener('mousemove', e => {
+  if (!isPanning) return;
+  vpPanX = e.clientX - panStartX;
+  vpPanY = e.clientY - panStartY;
+  clampPan();
+  applyZoom();
+});
+window.addEventListener('mouseup', () => {
+  if (!isPanning) return;
+  isPanning = false;
+  document.body.classList.remove('panning');
+});
+
+// ── Touch pinch-to-zoom (mobile) ──────────────────────────────────
+let _lastPinchDist = 0;
+_vp.addEventListener('touchstart', e => {
+  if (e.touches.length === 2) {
+    _lastPinchDist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+  }
+}, { passive: true });
+_vp.addEventListener('touchmove', e => {
+  if (e.touches.length !== 2) return;
+  e.preventDefault();
+  const dist = Math.hypot(
+    e.touches[0].clientX - e.touches[1].clientX,
+    e.touches[0].clientY - e.touches[1].clientY
+  );
+  if (_lastPinchDist === 0) { _lastPinchDist = dist; return; }
+  const factor  = dist / _lastPinchDist;
+  vpZoom = Math.min(Math.max(vpZoom * factor, 0.5), 10);
+  _lastPinchDist = dist;
+  clampPan();
+  applyZoom();
+}, { passive: false });
 
 // ── Preload engine ─────────────────────────────────────────────────
 function preloadAround(centerIdx) {
@@ -2338,14 +2525,12 @@ function preloadAround(centerIdx) {
 // resolve() เมื่อภาพ onload (หรือ timeout 3 วินาที)
 function swapToUrl(absUrl) {
   return new Promise(resolve => {
-    const next = activeBuf === 'a' ? 'b' : 'a';
-    const cur  = activeBuf;
+    const next   = activeBuf === 'a' ? 'b' : 'a';
+    const cur    = activeBuf;
     const nextEl = bufEl[next];
     const curEl  = bufEl[cur];
-
     const spinner = document.getElementById('loading-ring');
 
-    // ถ้าภาพอยู่ใน cache และโหลดเสร็จแล้ว — swap ทันที ไม่ต้องรอ
     const cached = imgCache.get(absUrl);
     const alreadyLoaded = cached && cached.complete && cached.naturalWidth > 0;
 
@@ -2354,30 +2539,38 @@ function swapToUrl(absUrl) {
       if (resolved) return;
       resolved = true;
       spinner.style.display = 'none';
+
+      // sync fit size จากภาพที่โหลดแล้ว
+      setFitFromImg(nextEl);
+
       // cross-fade: next fade-in, cur fade-out
       nextEl.style.opacity = '1';
       nextEl.style.zIndex  = '2';
       curEl.style.opacity  = '0';
       curEl.style.zIndex   = '1';
       activeBuf = next;
+
+      // cursor: ถ้า zoom > 1 ให้ grab, ไม่งั้น zoom-in
+      nextEl.style.cursor = vpZoom > 1 ? 'grab' : 'zoom-in';
+      curEl.style.cursor  = nextEl.style.cursor;
+
       resolve();
     };
 
-    // Timeout guard — ถ้าโหลดนานเกิน 3s ให้ swap ทันทีไม่ต้องรอ
     const guard = setTimeout(done, 3000);
 
     nextEl.onload  = () => { clearTimeout(guard); done(); };
     nextEl.onerror = () => { clearTimeout(guard); done(); };
     nextEl.style.display = '';
+    // pre-apply transform ก่อน load เพื่อไม่ให้กระตุก
+    applyZoom();
     nextEl.src = absUrl;
 
     if (alreadyLoaded) {
-      // ภาพพร้อมแล้ว — swap ทันที (ผ่าน microtask เพื่อให้ browser paint)
       clearTimeout(guard);
       nextEl.onload = nextEl.onerror = null;
       Promise.resolve().then(done);
     } else {
-      // แสดง spinner เฉพาะเมื่อต้องรอโหลดจริง
       spinner.style.display = '';
     }
 
@@ -2693,6 +2886,32 @@ document.addEventListener('keydown', e => {
   if (e.key === ' ')                      { e.preventDefault(); togglePlay(); }
   if (e.key === 'f' || e.key === 'F')     toggleFullscreen();
   if (e.key === 't' || e.key === 'T')     toggleTheatre();
+  if (e.key === '0')                      zoomReset();
+  if (e.key === '+' || e.key === '=') {
+    // zoom in 15% at center
+    const vr = _vp.getBoundingClientRect();
+    const mx = vr.width / 2; const my = vr.height / 2;
+    const newZoom = Math.min(vpZoom * 1.15, 10);
+    const originX = (vr.width  - vpFitW) / 2 + vpPanX;
+    const originY = (vr.height - vpFitH) / 2 + vpPanY;
+    const imgX = (mx - originX) / vpZoom;
+    const imgY = (my - originY) / vpZoom;
+    vpPanX = mx - imgX * newZoom - (vr.width  - vpFitW) / 2;
+    vpPanY = my - imgY * newZoom - (vr.height - vpFitH) / 2;
+    vpZoom = newZoom; clampPan(); applyZoom();
+  }
+  if (e.key === '-' || e.key === '_') {
+    const vr = _vp.getBoundingClientRect();
+    const mx = vr.width / 2; const my = vr.height / 2;
+    const newZoom = Math.max(vpZoom / 1.15, 0.5);
+    const originX = (vr.width  - vpFitW) / 2 + vpPanX;
+    const originY = (vr.height - vpFitH) / 2 + vpPanY;
+    const imgX = (mx - originX) / vpZoom;
+    const imgY = (my - originY) / vpZoom;
+    vpPanX = mx - imgX * newZoom - (vr.width  - vpFitW) / 2;
+    vpPanY = my - imgY * newZoom - (vr.height - vpFitH) / 2;
+    vpZoom = newZoom; clampPan(); applyZoom();
+  }
 });
 
 // ── Speed init ────────────────────────────────────────────────────
