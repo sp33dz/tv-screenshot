@@ -2053,6 +2053,31 @@ body.panning #viewport .replay-buf { cursor: grabbing; }
 #buf-a { opacity: 1; z-index: 2; }
 #buf-b { opacity: 0; z-index: 1; }
 
+/* ── Crosshair overlay ── */
+#crosshair-canvas {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;      /* ไม่บัง mouse events */
+  z-index: 6;
+  opacity: 0;                /* ซ่อนเมื่อ mouse อยู่นอก viewport */
+  transition: opacity 0.15s;
+}
+#viewport:hover #crosshair-canvas { opacity: 1; }
+
+/* label พิกัด XY ── จะ position ด้วย JS */
+#crosshair-label {
+  position: absolute;
+  background: rgba(0,0,0,0.72);
+  color: #e6edf3;
+  font-size: 11px; font-family: 'Consolas', 'Courier New', monospace;
+  padding: 3px 7px; border-radius: 4px;
+  pointer-events: none; z-index: 7;
+  white-space: nowrap;
+  opacity: 0; transition: opacity 0.15s;
+  border: 1px solid rgba(255,255,255,0.12);
+}
+#viewport:hover #crosshair-label { opacity: 1; }
+
 /* ── Zoom badge ── */
 #zoom-badge {
   position: absolute; bottom: 12px; right: 14px;
@@ -2210,6 +2235,9 @@ body.theatre #viewport:hover #play-hud  { opacity: 1; }
   <!-- คลิกรูปเพื่อเปิดต้นฉบับ (s0-v1) ใน tab ใหม่ -->
   <img id="buf-a" class="replay-buf" src="" alt="" style="display:none"/>
   <img id="buf-b" class="replay-buf" src="" alt="" style="display:none"/>
+  <!-- Crosshair overlay -->
+  <canvas id="crosshair-canvas"></canvas>
+  <div id="crosshair-label"></div>
   <!-- loading spinner -->
   <div id="loading-ring" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
        width:40px;height:40px;border:3px solid #30363d;border-top-color:var(--accent);
@@ -2458,13 +2486,6 @@ _vp.addEventListener('mousedown', e => {
   document.body.classList.add('panning');
   e.preventDefault();
 });
-window.addEventListener('mousemove', e => {
-  if (!isPanning) return;
-  vpPanX = e.clientX - panStartX;
-  vpPanY = e.clientY - panStartY;
-  clampPan();
-  applyZoom();
-});
 window.addEventListener('mouseup', () => {
   if (!isPanning) return;
   isPanning = false;
@@ -2495,6 +2516,136 @@ _vp.addEventListener('touchmove', e => {
   clampPan();
   applyZoom();
 }, { passive: false });
+
+// ── Crosshair engine ───────────────────────────────────────────────
+const _chCanvas = document.getElementById('crosshair-canvas');
+const _chCtx    = _chCanvas.getContext('2d');
+const _chLabel  = document.getElementById('crosshair-label');
+
+// สี crosshair — เส้นหลัก + เส้นประ
+const CH_COLOR      = 'rgba(255,255,255,0.75)';
+const CH_DASH_COLOR = 'rgba(255,255,255,0.25)';
+const CH_LINE_W     = 1;
+
+// resize canvas ให้ตรงกับ viewport เสมอ
+function resizeCrosshairCanvas() {
+  const vr = _vp.getBoundingClientRect();
+  _chCanvas.width  = vr.width;
+  _chCanvas.height = vr.height;
+}
+resizeCrosshairCanvas();
+new ResizeObserver(resizeCrosshairCanvas).observe(_vp);
+
+// แปลง mouse position (relative to viewport) → image pixel coordinate
+function viewportToImageCoords(mx, my) {
+  if (!vpFitW || !vpFitH) return null;
+  const vr = _vp.getBoundingClientRect();
+  // origin ของภาพใน viewport (เหมือนที่ applyZoom คำนวณ)
+  const originX = (vr.width  - vpFitW) / 2 + vpPanX;
+  const originY = (vr.height - vpFitH) / 2 + vpPanY;
+  // แปลงกลับ: image pixel = (mouse - origin) / zoom
+  // แล้วหาร vpFitW,vpFitH เพื่อ normalize กลับเป็น natural size
+  const activeEl = bufEl[activeBuf];
+  const natW = activeEl.naturalWidth  || vpFitW;
+  const natH = activeEl.naturalHeight || vpFitH;
+  const imgX = (mx - originX) / vpZoom * (natW / vpFitW);
+  const imgY = (my - originY) / vpZoom * (natH / vpFitH);
+  return {
+    x: Math.round(imgX),
+    y: Math.round(imgY),
+    natW, natH,
+    // เปอร์เซ็นต์ของภาพ
+    pctX: ((imgX / natW) * 100).toFixed(1),
+    pctY: ((imgY / natH) * 100).toFixed(1),
+    inImage: imgX >= 0 && imgX <= natW && imgY >= 0 && imgY <= natH,
+  };
+}
+
+function drawCrosshair(mx, my) {
+  const w = _chCanvas.width;
+  const h = _chCanvas.height;
+  _chCtx.clearRect(0, 0, w, h);
+
+  // เส้นแนวตั้ง
+  _chCtx.save();
+  _chCtx.lineWidth   = CH_LINE_W;
+  _chCtx.strokeStyle = CH_COLOR;
+  _chCtx.setLineDash([]);
+  _chCtx.beginPath();
+  _chCtx.moveTo(mx, 0);
+  _chCtx.lineTo(mx, h);
+  _chCtx.stroke();
+
+  // เส้นแนวนอน
+  _chCtx.beginPath();
+  _chCtx.moveTo(0, my);
+  _chCtx.lineTo(w, my);
+  _chCtx.stroke();
+
+  // dot ตรงกลาง (จุด crosshair)
+  _chCtx.fillStyle = CH_COLOR;
+  _chCtx.beginPath();
+  _chCtx.arc(mx, my, 3, 0, Math.PI * 2);
+  _chCtx.fill();
+
+  // วง circle เล็กรอบ dot
+  _chCtx.strokeStyle = CH_COLOR;
+  _chCtx.beginPath();
+  _chCtx.arc(mx, my, 7, 0, Math.PI * 2);
+  _chCtx.stroke();
+
+  _chCtx.restore();
+}
+
+function updateCrosshairLabel(mx, my, coords) {
+  if (!coords) { _chLabel.style.opacity = '0'; return; }
+
+  // สร้าง label text
+  let txt = 'X: ' + coords.x + '  Y: ' + coords.y;
+  if (coords.inImage) {
+    txt += '   (' + coords.pctX + '%, ' + coords.pctY + '%)';
+  }
+  _chLabel.textContent = txt;
+
+  // วาง label ให้ไม่หลุดขอบ viewport
+  const vr    = _vp.getBoundingClientRect();
+  const lw    = _chLabel.offsetWidth  || 180;
+  const lh    = _chLabel.offsetHeight || 22;
+  const pad   = 12;
+  let lx = mx + pad;
+  let ly = my + pad;
+  if (lx + lw > vr.width)  lx = mx - lw - pad;
+  if (ly + lh > vr.height) ly = my - lh - pad;
+  _chLabel.style.left = lx + 'px';
+  _chLabel.style.top  = ly + 'px';
+  _chLabel.style.opacity = '1';
+}
+
+// mousemove ใน viewport — วาด crosshair + อัปเดต label
+_vp.addEventListener('mousemove', e => {
+  const vr = _vp.getBoundingClientRect();
+  const mx = e.clientX - vr.left;
+  const my = e.clientY - vr.top;
+
+  // pan ถ้ากำลัง drag
+  if (isPanning) {
+    vpPanX = e.clientX - panStartX;
+    vpPanY = e.clientY - panStartY;
+    clampPan();
+    applyZoom();
+  }
+
+  // วาด crosshair เสมอเมื่อ mouse เข้า viewport
+  drawCrosshair(mx, my);
+  const coords = viewportToImageCoords(mx, my);
+  updateCrosshairLabel(mx, my, coords);
+});
+
+// ล้าง crosshair เมื่อ mouse ออกนอก viewport
+_vp.addEventListener('mouseleave', () => {
+  _chCtx.clearRect(0, 0, _chCanvas.width, _chCanvas.height);
+  _chLabel.style.opacity = '0';
+});
 
 // ── Preload engine ─────────────────────────────────────────────────
 function preloadAround(centerIdx) {
