@@ -1992,15 +1992,6 @@ select:focus, input:focus { outline: none; border-color: var(--accent); }
   flex: 1; display: flex; align-items: center; justify-content: center;
   background: #000; position: relative; overflow: hidden;
 }
-/* wrapper link — ขยายเต็ม viewport */
-#replay-img-href {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-}
 /* Double-buffer: img-a / img-b วางซ้อนกัน absolute */
 #viewport .replay-buf {
   position: absolute;
@@ -2012,6 +2003,7 @@ select:focus, input:focus { outline: none; border-color: var(--accent); }
   transform: translate(-50%, -50%);
   transition: opacity 0.15s ease-in-out;
   will-change: opacity;
+  cursor: pointer;  /* แสดง pointer เมื่อ hover — คลิกเพื่อดูรูปต้นฉบับ */
 }
 #buf-a { opacity: 1; z-index: 2; }
 #buf-b { opacity: 0; z-index: 1; }
@@ -2123,8 +2115,11 @@ select:focus, input:focus { outline: none; border-color: var(--accent); }
 <div id="viewport">
   <div id="no-img">Select a symbol to begin replay</div>
   <!-- Double-buffer: buf-a แสดงอยู่, buf-b โหลดถัดไป แล้ว swap -->
-  <img id="buf-a" class="replay-buf" src="" alt="" style="display:none"/>
-  <img id="buf-b" class="replay-buf" src="" alt="" style="display:none"/>
+  <!-- คลิกรูปเพื่อเปิดต้นฉบับ (s0-v1) ใน tab ใหม่ -->
+  <img id="buf-a" class="replay-buf" src="" alt="" style="display:none"
+       onclick="openOriginal()" title="Click to open original image"/>
+  <img id="buf-b" class="replay-buf" src="" alt="" style="display:none"
+       onclick="openOriginal()" title="Click to open original image"/>
   <!-- loading spinner -->
   <div id="loading-ring" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
        width:40px;height:40px;border:3px solid #30363d;border-top-color:var(--accent);
@@ -2213,6 +2208,24 @@ function getAbsUrl(e) {
     return 'file:///' + base + '/' + e.path;
   }
   return '../screenshots/' + e.path;
+}
+
+// URL ต้นฉบับ full-resolution (=s0-v1) — ใช้เปิด tab ใหม่
+function getOriginalUrl(e) {
+  const driveUrl = e.drive_public_url && e.drive_public_url.trim();
+  if (driveUrl) {
+    // แทนที่ sz ทุกรูปแบบ → s0-v1 (full resolution)
+    return driveUrl.replace(/sz=s\d+-[a-z0-9]+-v1|sz=s0-v1/i, 'sz=s0-v1');
+  }
+  // non-Drive: ใช้ URL เดิม (ไม่มี sz parameter)
+  return getAbsUrl(e);
+}
+
+// เปิดรูปต้นฉบับใน tab ใหม่เมื่อคลิกที่รูป
+function openOriginal() {
+  if (!source.length) return;
+  const url = getOriginalUrl(source[idx]);
+  if (url) window.open(url, '_blank', 'noopener');
 }
 
 // ── Preload engine ─────────────────────────────────────────────────
