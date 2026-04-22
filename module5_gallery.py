@@ -1992,10 +1992,22 @@ select:focus, input:focus { outline: none; border-color: var(--accent); }
   flex: 1; display: flex; align-items: center; justify-content: center;
   background: #000; position: relative; overflow: hidden;
 }
+/* เพิ่มใหม่ */
+#replay-img-href {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+}
+
+/* แก้ไข */
 #replay-img {
   max-width: 100%; max-height: 100%; object-fit: contain;
   transition: opacity 0.08s;
   user-select: none;
+  display: block;  /* ← เพิ่ม: กำจัด inline gap ใต้ภาพ */
 }
 #overlay {
   position: absolute; top: 12px; left: 12px; background: rgba(0,0,0,0.65);
