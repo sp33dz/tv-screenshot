@@ -2376,7 +2376,7 @@ function renderFrame() {
 
   img.style.opacity = '0';
   imghref.href = absUrl;
-  img.src = absUrl.replace("=s0-v1", "=s1100-rw-v1")
+  img.src = absUrl.replace("=s0-v1", "=s600-rw-v1")
   img.onload = () => { img.style.opacity = '1'; };
   img.style.display = '';
   noImg.style.display = 'none';
