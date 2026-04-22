@@ -2101,7 +2101,7 @@ select:focus, input:focus { outline: none; border-color: var(--accent); }
 <!-- Viewport -->
 <div id="viewport">
   <div id="no-img">Select a symbol to begin replay</div>
-  <img id="replay-img" src="" alt="" style="display:none"/>
+  <a id="replay-img-href" href="" target="_blank"><img id="replay-img" src="" alt="" style="display:none"/></a>
   <div id="overlay" style="display:none">
     <div id="ov-symbol" style="font-weight:600;color:var(--accent)"></div>
     <div id="ov-datetime" style="color:var(--text)"></div>
@@ -2335,6 +2335,7 @@ function jumpToDate() {
 // ── Render ────────────────────────────────────────────────────────
 function renderFrame() {
   const img = document.getElementById('replay-img');
+  const imghref = document.getElementById('replay-img-href');
   const noImg = document.getElementById('no-img');
   const overlay = document.getElementById('overlay');
 
@@ -2362,7 +2363,8 @@ function renderFrame() {
   }
 
   img.style.opacity = '0';
-  img.src = absUrl;
+  imghref.href = absUrl;
+  img.src = absUrl.replace("=s0", "=s2600");
   img.onload = () => { img.style.opacity = '1'; };
   img.style.display = '';
   noImg.style.display = 'none';
