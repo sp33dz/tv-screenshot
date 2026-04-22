@@ -2376,7 +2376,7 @@ function renderFrame() {
 
   img.style.opacity = '0';
   imghref.href = absUrl;
-  img.src = absUrl.replace("=s0", "=s2600");
+  img.src = absUrl.replace("=s0", "=s1600");
   img.onload = () => { img.style.opacity = '1'; };
   img.style.display = '';
   noImg.style.display = 'none';
