@@ -1991,8 +1991,50 @@ select:focus, input:focus { outline: none; border-color: var(--accent); }
 #viewport {
   flex: 1; display: flex; align-items: center; justify-content: center;
   background: #000; position: relative; overflow: hidden;
+  transition: flex 0.25s ease;
 }
-/* Double-buffer: img-a / img-b วางซ้อนกัน absolute */
+
+/* ── Theatre mode: viewport กินพื้นที่มากขึ้น ซ่อน header ── */
+body.theatre #header        { display: none; }
+body.theatre #scrubber-wrap { padding: 4px 16px 2px; }
+body.theatre #controls      { padding: 6px 16px; }
+body.theatre #viewport      { flex: 1 1 auto; }
+
+/* ── Fullscreen (Fullscreen API) ── */
+#viewport:fullscreen,
+#viewport:-webkit-full-screen {
+  background: #000;
+  width: 100vw; height: 100vh;
+  display: flex; align-items: center; justify-content: center;
+}
+#viewport:fullscreen .replay-buf,
+#viewport:-webkit-full-screen .replay-buf {
+  max-width: 100vw; max-height: 100vh;
+}
+/* mini HUD ที่ overlay ปรับขนาดเมื่อเต็มจอ */
+#viewport:fullscreen #overlay,
+#viewport:-webkit-full-screen #overlay {
+  font-size: 15px; padding: 10px 16px;
+}
+
+/* ── Fullscreen button ── */
+#btn-fullscreen {
+  background: transparent; border: 1px solid var(--border); color: var(--text);
+  padding: 5px 10px; border-radius: 6px; font-size: 14px; cursor: pointer;
+  transition: border-color 0.15s, color 0.15s; line-height: 1;
+}
+#btn-fullscreen:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── Theatre toggle button ── */
+#btn-theatre {
+  background: transparent; border: 1px solid var(--border); color: var(--text);
+  padding: 5px 10px; border-radius: 6px; font-size: 13px; cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+#btn-theatre:hover { border-color: var(--accent); color: var(--accent); }
+body.theatre #btn-theatre { border-color: var(--accent); color: var(--accent); }
+
+/* ── Double-buffer: img-a / img-b วางซ้อนกัน absolute ── */
 #viewport .replay-buf {
   position: absolute;
   max-width: 100%; max-height: 100%;
@@ -2003,15 +2045,41 @@ select:focus, input:focus { outline: none; border-color: var(--accent); }
   transform: translate(-50%, -50%);
   transition: opacity 0.15s ease-in-out;
   will-change: opacity;
-  cursor: pointer;  /* แสดง pointer เมื่อ hover — คลิกเพื่อดูรูปต้นฉบับ */
+  cursor: pointer;
 }
 #buf-a { opacity: 1; z-index: 2; }
 #buf-b { opacity: 0; z-index: 1; }
+
+/* ── Overlay info ── */
 #overlay {
   position: absolute; top: 12px; left: 12px; background: rgba(0,0,0,0.65);
   border-radius: 6px; padding: 8px 12px; font-size: 13px; line-height: 1.7;
-  pointer-events: none;
+  pointer-events: none; z-index: 5;
 }
+/* overlay fade-out ระหว่าง play ── จะ fade กลับมาเมื่อ pause หรือ hover */
+body.playing #overlay    { opacity: 0.35; transition: opacity 0.4s; }
+body.playing #viewport:hover #overlay { opacity: 1; }
+
+/* ── Mini playback HUD ── แสดงตรงกลางล่าง viewport ขณะ fullscreen/theatre */
+#play-hud {
+  position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
+  display: none; align-items: center; gap: 10px; z-index: 10;
+  background: rgba(0,0,0,0.72); border-radius: 30px; padding: 7px 20px;
+  pointer-events: auto; opacity: 0; transition: opacity 0.3s;
+}
+body.theatre #play-hud,
+#viewport:fullscreen #play-hud,
+#viewport:-webkit-full-screen #play-hud { display: flex; }
+#viewport:hover #play-hud,
+body.theatre #viewport:hover #play-hud  { opacity: 1; }
+.hud-btn {
+  background: none; border: none; color: #fff; font-size: 18px; cursor: pointer;
+  padding: 2px 6px; border-radius: 4px; line-height: 1;
+}
+.hud-btn:hover { color: var(--accent); }
+#hud-frame { font-size: 12px; color: #ccc; white-space: nowrap; min-width: 100px; text-align: center; }
+#hud-speed { font-size: 12px; color: var(--accent); min-width: 30px; text-align: center; }
+
 #no-img {
   position: absolute; color: var(--muted); font-size: 15px; text-align: center;
 }
@@ -2107,6 +2175,8 @@ select:focus, input:focus { outline: none; border-color: var(--accent); }
   <input type="date" id="jump-date" title="Jump to date"/>
   <button class="btn btn-outline" onclick="jumpToDate()">Jump</button>
 
+  <button id="btn-theatre"   onclick="toggleTheatre()" title="Theatre mode [T]">⬛ Theatre</button>
+  <button id="btn-fullscreen" onclick="toggleFullscreen()" title="Fullscreen [F]">⛶</button>
   <button class="btn btn-outline" onclick="openGallery()">Gallery ↗</button>
   <span id="frame-info">—</span>
 </div>
@@ -2129,6 +2199,17 @@ select:focus, input:focus { outline: none; border-color: var(--accent); }
     <div id="ov-datetime" style="color:var(--text)"></div>
     <div id="ov-tag" style="color:#888"></div>
     <div id="ov-note" style="color:var(--note);margin-top:3px"></div>
+  </div>
+  <!-- Mini HUD — แสดงเฉพาะ theatre/fullscreen เมื่อ hover -->
+  <div id="play-hud">
+    <button class="hud-btn" onclick="stepFrame(-1)" title="Prev [←]">⏮</button>
+    <button class="hud-btn" id="hud-play-btn" onclick="togglePlay()" title="Play/Pause [Space]">▶</button>
+    <button class="hud-btn" onclick="stepFrame(1)"  title="Next [→]">⏭</button>
+    <span id="hud-frame">— / —</span>
+    <button class="hud-btn" onclick="changeHudSpeed(-1)" title="Slower">−</button>
+    <span id="hud-speed">1×</span>
+    <button class="hud-btn" onclick="changeHudSpeed(1)"  title="Faster">+</button>
+    <button class="hud-btn" onclick="toggleFullscreen()" title="Exit fullscreen [F]">✕</button>
   </div>
 </div>
 
@@ -2163,8 +2244,8 @@ select:focus, input:focus { outline: none; border-color: var(--accent); }
 
 <script>
 const SPEEDS = [0.5, 1, 2, 4, 8, 16];  // index maps to range value 0-5
-const DEFAULT_SPEED_IDX = 1;            // 1× default
-const PRELOAD_AHEAD   = 3;              // โหลดล่วงหน้า N ภาพ
+const DEFAULT_SPEED_IDX = 1;            // default 1× (index 1)
+const PRELOAD_AHEAD   = 4;              // โหลดล่วงหน้า N ภาพ (เพิ่มเป็น 4 สำหรับ 1×-2×)
 const PRELOAD_BEHIND  = 1;              // เก็บ cache ย้อนหลัง N ภาพ
 const GDRIVE_SZ       = 's1600-rw-v1'; // ขนาด thumbnail ที่ใช้แสดง
 
@@ -2415,6 +2496,7 @@ function applySource() {
   scrub.max   = Math.max(0, source.length - 1);
   scrub.value = 0;
   updateTimeline();
+  syncHud();
   renderFrame();
 }
 
@@ -2432,7 +2514,10 @@ function updateTimeline() {
 // ── Playback — drift-corrected scheduler ──────────────────────────
 function togglePlay() {
   playing = !playing;
-  document.getElementById('play-btn').textContent = playing ? '⏸ Pause' : '▶ Play';
+  const label = playing ? '⏸' : '▶';
+  document.getElementById('play-btn').textContent     = playing ? '⏸ Pause' : '▶ Play';
+  document.getElementById('hud-play-btn').textContent = label;
+  document.body.classList.toggle('playing', playing);
   if (playing) advanceFrame();
   else clearTimeout(timer);
 }
@@ -2443,31 +2528,77 @@ async function advanceFrame() {
   if (!playing) return;
   if (idx >= source.length - 1) {
     playing = false;
-    document.getElementById('play-btn').textContent = '▶ Play';
+    document.getElementById('play-btn').textContent     = '▶ Play';
+    document.getElementById('hud-play-btn').textContent = '▶';
+    document.body.classList.remove('playing');
     return;
   }
 
-  const targetMs = 1000 / SPEEDS[speedIdx];  // เวลาที่ควรใช้ต่อ frame
+  const targetMs = 1000 / SPEEDS[speedIdx];
   const t0 = Date.now();
 
   idx++;
   syncScrubber();
-  await renderFrame();                        // รอภาพโหลดเสร็จ (หรือ timeout)
+  syncHud();
+  await renderFrame();
 
-  if (!playing) return;                       // ถูก pause ระหว่างรอ
+  if (!playing) return;
 
   const elapsed = Date.now() - t0;
-  const wait    = Math.max(0, targetMs - elapsed);  // ชดเชยเวลาที่ใช้ไปแล้ว
-
+  const wait    = Math.max(0, targetMs - elapsed);
   timer = setTimeout(advanceFrame, wait);
+}
+
+// ── Theatre mode ──────────────────────────────────────────────────
+function toggleTheatre() {
+  document.body.classList.toggle('theatre');
+}
+
+// ── Fullscreen (Fullscreen API) ───────────────────────────────────
+function toggleFullscreen() {
+  const vp = document.getElementById('viewport');
+  const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+  if (!fsEl) {
+    // เข้าเต็มจอ
+    (vp.requestFullscreen || vp.webkitRequestFullscreen).call(vp);
+  } else {
+    // ออกเต็มจอ
+    (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+  }
+}
+// อัปเดตไอคอน fullscreen button เมื่อ state เปลี่ยน
+document.addEventListener('fullscreenchange',        _onFsChange);
+document.addEventListener('webkitfullscreenchange',  _onFsChange);
+function _onFsChange() {
+  const inFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  document.getElementById('btn-fullscreen').textContent = inFs ? '⛶' : '⛶';
+  document.getElementById('btn-fullscreen').title       = inFs ? 'Exit Fullscreen [F]' : 'Fullscreen [F]';
+}
+
+// ── HUD sync ─────────────────────────────────────────────────────
+function syncHud() {
+  document.getElementById('hud-frame').textContent =
+    source.length ? (idx + 1) + ' / ' + source.length : '— / —';
+  document.getElementById('hud-speed').textContent = SPEEDS[speedIdx] + '×';
+}
+
+// ── HUD speed ±1 step ─────────────────────────────────────────────
+function changeHudSpeed(dir) {
+  speedIdx = Math.max(0, Math.min(SPEEDS.length - 1, speedIdx + dir));
+  document.getElementById('speed-range').value = speedIdx;
+  document.getElementById('speed-val').textContent = SPEEDS[speedIdx] + '×';
+  syncHud();
 }
 
 function stepFrame(d) {
   clearTimeout(timer);
   playing = false;
-  document.getElementById('play-btn').textContent = '▶ Play';
+  document.getElementById('play-btn').textContent     = '▶ Play';
+  document.getElementById('hud-play-btn').textContent = '▶';
+  document.body.classList.remove('playing');
   idx = Math.max(0, Math.min(source.length - 1, idx + d));
   syncScrubber();
+  syncHud();
   renderFrame();
 }
 
@@ -2556,10 +2687,12 @@ function openGallery() { window.open('index.html', '_blank'); }
 
 // ── Keyboard ──────────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
-  if (e.target.tagName === 'INPUT') return;
-  if (e.key === 'ArrowLeft')  stepFrame(-1);
-  if (e.key === 'ArrowRight') stepFrame(1);
-  if (e.key === ' ') { e.preventDefault(); togglePlay(); }
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (e.key === 'ArrowLeft')              stepFrame(-1);
+  if (e.key === 'ArrowRight')             stepFrame(1);
+  if (e.key === ' ')                      { e.preventDefault(); togglePlay(); }
+  if (e.key === 'f' || e.key === 'F')     toggleFullscreen();
+  if (e.key === 't' || e.key === 'T')     toggleTheatre();
 });
 
 // ── Speed init ────────────────────────────────────────────────────
