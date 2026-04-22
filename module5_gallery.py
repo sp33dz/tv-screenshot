@@ -1992,23 +1992,29 @@ select:focus, input:focus { outline: none; border-color: var(--accent); }
   flex: 1; display: flex; align-items: center; justify-content: center;
   background: #000; position: relative; overflow: hidden;
 }
-/* เพิ่มใหม่ */
+/* wrapper link — ขยายเต็ม viewport */
 #replay-img-href {
   display: flex;
   align-items: center;
   justify-content: center;
-  max-width: 100%;
-  max-height: 100%;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
 }
-
-/* แก้ไข */
-#replay-img {
-  max-width: 100%; max-height: 100%; object-fit: contain;
-  transition: opacity 0.08s;
+/* Double-buffer: img-a / img-b วางซ้อนกัน absolute */
+#viewport .replay-buf {
+  position: absolute;
+  max-width: 100%; max-height: 100%;
+  object-fit: contain;
   user-select: none;
-  display: block;  /* ← เพิ่ม: กำจัด inline gap ใต้ภาพ */
+  display: block;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  transition: opacity 0.15s ease-in-out;
+  will-change: opacity;
 }
+#buf-a { opacity: 1; z-index: 2; }
+#buf-b { opacity: 0; z-index: 1; }
 #overlay {
   position: absolute; top: 12px; left: 12px; background: rgba(0,0,0,0.65);
   border-radius: 6px; padding: 8px 12px; font-size: 13px; line-height: 1.7;
@@ -2044,6 +2050,9 @@ select:focus, input:focus { outline: none; border-color: var(--accent); }
   background: var(--bg); border: 1px solid var(--border); color: var(--text);
   padding: 6px; border-radius: 6px; font-size: 13px;
 }
+
+/* ── Loading spinner ── */
+@keyframes spin { to { transform: translate(-50%,-50%) rotate(360deg); } }
 
 /* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
@@ -2113,7 +2122,13 @@ select:focus, input:focus { outline: none; border-color: var(--accent); }
 <!-- Viewport -->
 <div id="viewport">
   <div id="no-img">Select a symbol to begin replay</div>
-  <a id="replay-img-href" href="" target="_blank"><img id="replay-img" src="" alt="" style="display:none"/></a>
+  <!-- Double-buffer: buf-a แสดงอยู่, buf-b โหลดถัดไป แล้ว swap -->
+  <img id="buf-a" class="replay-buf" src="" alt="" style="display:none"/>
+  <img id="buf-b" class="replay-buf" src="" alt="" style="display:none"/>
+  <!-- loading spinner -->
+  <div id="loading-ring" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+       width:40px;height:40px;border:3px solid #30363d;border-top-color:var(--accent);
+       border-radius:50%;animation:spin 0.7s linear infinite;z-index:10;"></div>
   <div id="overlay" style="display:none">
     <div id="ov-symbol" style="font-weight:600;color:var(--accent)"></div>
     <div id="ov-datetime" style="color:var(--text)"></div>
@@ -2154,6 +2169,9 @@ select:focus, input:focus { outline: none; border-color: var(--accent); }
 <script>
 const SPEEDS = [0.5, 1, 2, 4, 8, 16];  // index maps to range value 0-5
 const DEFAULT_SPEED_IDX = 1;            // 1× default
+const PRELOAD_AHEAD   = 3;              // โหลดล่วงหน้า N ภาพ
+const PRELOAD_BEHIND  = 1;              // เก็บ cache ย้อนหลัง N ภาพ
+const GDRIVE_SZ       = 's1600-rw-v1'; // ขนาด thumbnail ที่ใช้แสดง
 
 // ── Inline data (embedded at build time — works with file://) ──────
 const _INLINE_DATA      = %%INLINE_DATA%%;
@@ -2161,25 +2179,127 @@ const _INLINE_NOTES     = %%INLINE_NOTES%%;
 const _ABS_SHOT_DIR     = '%%ABS_SCREENSHOT_FOLDER%%';
 const _GITHUB_PAGES_URL = '%%GITHUB_PAGES_URL%%';  // "" = disabled
 
-let ALL = [];
-let NOTES = {};
-let source = [];     // filtered entries for current replay
-let idx = 0;
-let playing = false;
-let timer = null;
+let ALL    = [];
+let NOTES  = {};
+let source = [];
+let idx    = 0;
+let playing  = false;
+let timer    = null;
 let speedIdx = DEFAULT_SPEED_IDX;
+
+// Double-buffer state
+// activeBuf = 'a' | 'b'  — buffer ที่กำลังแสดงอยู่
+let activeBuf = 'a';
+const bufEl = {
+  a: document.getElementById('buf-a'),
+  b: document.getElementById('buf-b'),
+};
+
+// Preload cache: Map<absUrl, HTMLImageElement>
+const imgCache = new Map();
+
+// ── URL helper ─────────────────────────────────────────────────────
+function getAbsUrl(e) {
+  const driveUrl = e.drive_public_url && e.drive_public_url.trim();
+  if (driveUrl) {
+    // ปรับ sz parameter ให้ใช้ขนาดที่ต้องการ (s0-v1 → sz ที่กำหนด)
+    return driveUrl.replace(/sz=s\d+-[a-z0-9]+-v1|sz=s0-v1/i, 'sz=' + GDRIVE_SZ);
+  }
+  if (typeof _GITHUB_PAGES_URL === 'string' && _GITHUB_PAGES_URL.trim()) {
+    return _GITHUB_PAGES_URL.trim() + '/screenshots/' + e.path;
+  }
+  if (window.location.protocol === 'file:') {
+    const base = _ABS_SHOT_DIR.replace(/\\/g, '/').replace(/^\/*/, '');
+    return 'file:///' + base + '/' + e.path;
+  }
+  return '../screenshots/' + e.path;
+}
+
+// ── Preload engine ─────────────────────────────────────────────────
+function preloadAround(centerIdx) {
+  if (!source.length) return;
+
+  const keep = new Set();
+  const lo = Math.max(0, centerIdx - PRELOAD_BEHIND);
+  const hi = Math.min(source.length - 1, centerIdx + PRELOAD_AHEAD);
+
+  for (let i = lo; i <= hi; i++) {
+    const url = getAbsUrl(source[i]);
+    keep.add(url);
+    if (!imgCache.has(url)) {
+      const img = new Image();
+      img.src = url;
+      imgCache.set(url, img);
+    }
+  }
+
+  // Evict entries outside the keep-window to limit memory
+  for (const [url] of imgCache) {
+    if (!keep.has(url)) imgCache.delete(url);
+  }
+}
+
+// ── Double-buffer swap ─────────────────────────────────────────────
+// แสดงภาพที่ absUrl บน buffer ถัดไป แล้ว cross-fade
+// resolve() เมื่อภาพ onload (หรือ timeout 3 วินาที)
+function swapToUrl(absUrl) {
+  return new Promise(resolve => {
+    const next = activeBuf === 'a' ? 'b' : 'a';
+    const cur  = activeBuf;
+    const nextEl = bufEl[next];
+    const curEl  = bufEl[cur];
+
+    const spinner = document.getElementById('loading-ring');
+
+    // ถ้าภาพอยู่ใน cache และโหลดเสร็จแล้ว — swap ทันที ไม่ต้องรอ
+    const cached = imgCache.get(absUrl);
+    const alreadyLoaded = cached && cached.complete && cached.naturalWidth > 0;
+
+    let resolved = false;
+    const done = () => {
+      if (resolved) return;
+      resolved = true;
+      spinner.style.display = 'none';
+      // cross-fade: next fade-in, cur fade-out
+      nextEl.style.opacity = '1';
+      nextEl.style.zIndex  = '2';
+      curEl.style.opacity  = '0';
+      curEl.style.zIndex   = '1';
+      activeBuf = next;
+      resolve();
+    };
+
+    // Timeout guard — ถ้าโหลดนานเกิน 3s ให้ swap ทันทีไม่ต้องรอ
+    const guard = setTimeout(done, 3000);
+
+    nextEl.onload  = () => { clearTimeout(guard); done(); };
+    nextEl.onerror = () => { clearTimeout(guard); done(); };
+    nextEl.style.display = '';
+    nextEl.src = absUrl;
+
+    if (alreadyLoaded) {
+      // ภาพพร้อมแล้ว — swap ทันที (ผ่าน microtask เพื่อให้ browser paint)
+      clearTimeout(guard);
+      nextEl.onload = nextEl.onerror = null;
+      Promise.resolve().then(done);
+    } else {
+      // แสดง spinner เฉพาะเมื่อต้องรอโหลดจริง
+      spinner.style.display = '';
+    }
+
+    curEl.style.display = '';
+  });
+}
 
 // ── Init ──────────────────────────────────────────────────────────
 async function init() {
   try {
-    // Always use embedded data first — works with file:// and http://
-    ALL = _INLINE_DATA.entries || [];
+    ALL   = _INLINE_DATA.entries || [];
     fillSymbols(_INLINE_DATA.symbols || []);
     fillTags(_INLINE_DATA.tags || []);
     fillDrives(_INLINE_DATA.drives || []);
     NOTES = Object.assign({}, _INLINE_NOTES);
 
-    // In file:// mode, merge notes from localStorage (user-saved notes)
     if (window.location.protocol === 'file:') {
       try {
         const stored = localStorage.getItem('tv_notes');
@@ -2187,7 +2307,6 @@ async function init() {
       } catch(_) {}
     }
 
-    // If running via http:// server, also try live fetch for fresher data
     if (window.location.protocol !== 'file:') {
       try {
         const [dr, nr] = await Promise.allSettled([
@@ -2195,11 +2314,10 @@ async function init() {
           fetch('notes.json').then(r => r.json()),
         ]);
         if (dr.status === 'fulfilled' && dr.value && dr.value.entries) {
-          // Merge server entries with inline entries — deduplicate by path
           const serverEntries = dr.value.entries || [];
           const inlineEntries = _INLINE_DATA.entries || [];
           const pathSet = new Set(serverEntries.map(e => e.path));
-          const merged = [...serverEntries];
+          const merged  = [...serverEntries];
           inlineEntries.forEach(e => { if (!pathSet.has(e.path)) merged.push(e); });
           ALL = merged;
           const allSyms = [...new Set(merged.map(e => e.symbol))].sort();
@@ -2210,7 +2328,7 @@ async function init() {
           fillDrives(allDrvs);
         }
         if (nr.status === 'fulfilled') NOTES = nr.value;
-      } catch(_) { /* live fetch failed — using inline data */ }
+      } catch(_) {}
     }
   } catch(e) { console.error(e); }
 }
@@ -2260,18 +2378,28 @@ function applySource() {
   const drv = document.getElementById('sel-drive').value;
   const tag = document.getElementById('sel-tag').value;
 
-  if (!sym) { source = []; renderFrame(); return; }
+  clearTimeout(timer);
+  playing = false;
+  document.getElementById('play-btn').textContent = '▶ Play';
+
+  if (!sym) {
+    source = [];
+    imgCache.clear();
+    renderFrame();
+    return;
+  }
 
   source = ALL.filter(e =>
     e.symbol === sym &&
     (!mkt || e.market === mkt) &&
     (!drv || e.drive_name === drv) &&
     (!tag || e.tag === tag)
-  ).sort((a,b) => (a.sort_key || '').localeCompare(b.sort_key || ''));
+  ).sort((a, b) => (a.sort_key || '').localeCompare(b.sort_key || ''));
 
   idx = 0;
+  imgCache.clear();
   const scrub = document.getElementById('scrubber');
-  scrub.max = Math.max(0, source.length - 1);
+  scrub.max   = Math.max(0, source.length - 1);
   scrub.value = 0;
   updateTimeline();
   renderFrame();
@@ -2282,35 +2410,43 @@ function updateTimeline() {
   const tle = document.getElementById('tl-end');
   if (source.length) {
     tls.textContent = source[0].date;
-    tle.textContent = source[source.length-1].date;
+    tle.textContent = source[source.length - 1].date;
   } else {
     tls.textContent = tle.textContent = '—';
   }
 }
 
-// ── Playback ──────────────────────────────────────────────────────
+// ── Playback — drift-corrected scheduler ──────────────────────────
 function togglePlay() {
   playing = !playing;
   document.getElementById('play-btn').textContent = playing ? '⏸ Pause' : '▶ Play';
-  if (playing) scheduleNext();
+  if (playing) advanceFrame();
   else clearTimeout(timer);
 }
 
-function scheduleNext() {
+// advanceFrame: advance idx → renderFrame → wait remaining time → repeat
+// ใช้ Date.now() วัดเวลาจริง เพื่อชดเชย network latency
+async function advanceFrame() {
   if (!playing) return;
-  const fps = SPEEDS[speedIdx];
-  const delay = 1000 / fps;
-  timer = setTimeout(() => {
-    if (idx < source.length - 1) {
-      idx++;
-      syncScrubber();
-      renderFrame();
-      scheduleNext();
-    } else {
-      playing = false;
-      document.getElementById('play-btn').textContent = '▶ Play';
-    }
-  }, delay);
+  if (idx >= source.length - 1) {
+    playing = false;
+    document.getElementById('play-btn').textContent = '▶ Play';
+    return;
+  }
+
+  const targetMs = 1000 / SPEEDS[speedIdx];  // เวลาที่ควรใช้ต่อ frame
+  const t0 = Date.now();
+
+  idx++;
+  syncScrubber();
+  await renderFrame();                        // รอภาพโหลดเสร็จ (หรือ timeout)
+
+  if (!playing) return;                       // ถูก pause ระหว่างรอ
+
+  const elapsed = Date.now() - t0;
+  const wait    = Math.max(0, targetMs - elapsed);  // ชดเชยเวลาที่ใช้ไปแล้ว
+
+  timer = setTimeout(advanceFrame, wait);
 }
 
 function stepFrame(d) {
@@ -2333,8 +2469,7 @@ function syncScrubber() {
 
 function onSpeedChange() {
   speedIdx = parseInt(document.getElementById('speed-range').value, 10);
-  const v = SPEEDS[speedIdx];
-  document.getElementById('speed-val').textContent = v + '×';
+  document.getElementById('speed-val').textContent = SPEEDS[speedIdx] + '×';
 }
 
 function jumpToDate() {
@@ -2344,61 +2479,49 @@ function jumpToDate() {
   if (i >= 0) { idx = i; syncScrubber(); renderFrame(); }
 }
 
-// ── Render ────────────────────────────────────────────────────────
-function renderFrame() {
-  const img = document.getElementById('replay-img');
-  const imghref = document.getElementById('replay-img-href');
-  const noImg = document.getElementById('no-img');
+// ── Render (async — รอ double-buffer swap) ─────────────────────────
+async function renderFrame() {
+  const noImg   = document.getElementById('no-img');
   const overlay = document.getElementById('overlay');
 
   if (!source.length) {
-    img.style.display = 'none';
-    noImg.style.display = '';
+    bufEl.a.style.display = bufEl.b.style.display = 'none';
+    noImg.style.display   = '';
     overlay.style.display = 'none';
     document.getElementById('frame-info').textContent = '—';
     return;
   }
 
-  const e = source[idx];
-  const rel = e.path;
-  let absUrl;
-  const driveUrl = e.drive_public_url && e.drive_public_url.trim();
-  if (driveUrl) {
-    absUrl = driveUrl;
-  } else if (typeof _GITHUB_PAGES_URL === 'string' && _GITHUB_PAGES_URL.trim()) {
-    absUrl = _GITHUB_PAGES_URL.trim() + '/screenshots/' + rel;
-  } else if (window.location.protocol === 'file:') {
-    const base = _ABS_SHOT_DIR.replace(/\\/g, '/').replace(/^\/*/, '');
-    absUrl = 'file:///' + base + '/' + rel;
-  } else {
-    absUrl = '../screenshots/' + rel;
-  }
-
-  img.style.opacity = '0';
-  imghref.href = absUrl;
-  img.src = absUrl.replace("=s0-v1", "=s600-rw-v1")
-  img.onload = () => { img.style.opacity = '1'; };
-  img.style.display = '';
   noImg.style.display = 'none';
+
+  const e      = source[idx];
+  const absUrl = getAbsUrl(e);
+
+  // เริ่ม preload ภาพรอบข้างทันที (non-blocking)
+  preloadAround(idx);
+
+  // swap buffer → cross-fade
+  await swapToUrl(absUrl);
+
+  // อัปเดต overlay + UI
   overlay.style.display = '';
-
-  document.getElementById('ov-symbol').textContent = e.symbol + ' · ' + e.market;
+  document.getElementById('ov-symbol').textContent   = e.symbol + ' · ' + e.market;
   document.getElementById('ov-datetime').textContent = e.datetime_str;
-  document.getElementById('ov-tag').textContent = e.tag || '';
+  document.getElementById('ov-tag').textContent      = e.tag || '';
 
-  const n = NOTES[rel];
-  document.getElementById('ov-note').textContent = n?.note ? '📝 ' + n.note : '';
-  document.getElementById('note-input').value = n?.note || '';
-  document.getElementById('mark-sel').value = n?.trade_mark || '';
+  const n = NOTES[e.path];
+  document.getElementById('ov-note').textContent     = n?.note ? '📝 ' + n.note : '';
+  document.getElementById('note-input').value        = n?.note || '';
+  document.getElementById('mark-sel').value          = n?.trade_mark || '';
 
   document.getElementById('frame-info').textContent =
-    `Frame ${idx+1} / ${source.length} — ${e.datetime_str}`;
+    'Frame ' + (idx + 1) + ' / ' + source.length + ' — ' + e.datetime_str;
 }
 
 // ── Annotation ────────────────────────────────────────────────────
 async function saveFrame() {
   if (!source.length) return;
-  const e = source[idx];
+  const e    = source[idx];
   const note = document.getElementById('note-input').value.trim();
   const mark = document.getElementById('mark-sel').value;
   NOTES[e.path] = { path: e.path, note, trade_mark: mark, updated_at: new Date().toISOString() };
@@ -2408,10 +2531,10 @@ async function saveFrame() {
     try {
       await fetch('/save_note', {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: e.path, note, trade_mark: mark }),
       });
-    } catch(_) {/* standalone */}
+    } catch(_) {}
   }
   renderFrame();
 }
@@ -2423,7 +2546,7 @@ document.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT') return;
   if (e.key === 'ArrowLeft')  stepFrame(-1);
   if (e.key === 'ArrowRight') stepFrame(1);
-  if (e.key === ' ')          { e.preventDefault(); togglePlay(); }
+  if (e.key === ' ') { e.preventDefault(); togglePlay(); }
 });
 
 // ── Speed init ────────────────────────────────────────────────────
@@ -2437,11 +2560,11 @@ const _PW_HASH = '%%GALLERY_PASSWORD_HASH%%';
 
 async function sha256hex(str) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 async function checkPw() {
-  const val = document.getElementById('pw-box').value;
+  const val  = document.getElementById('pw-box').value;
   const hash = await sha256hex(val);
   if (hash === _PW_HASH) {
     sessionStorage.setItem('tv_auth', hash);
@@ -2462,7 +2585,7 @@ async function checkPw() {
       document.getElementById('pw-screen').style.display = 'none';
     } else {
       document.getElementById('pw-box').focus();
-      return;  // don't call init until unlocked
+      return;
     }
   }
   init();
