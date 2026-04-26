@@ -1,0 +1,1353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<title>Trading Replay</title>
+<style>
+/* ══════════════════════════════════════════
+   CSS VARIABLES & RESET
+══════════════════════════════════════════ */
+:root {
+  --bg: #0a0e14;
+  --panel: #111827;
+  --panel2: #1a2233;
+  --border: #1e2d40;
+  --accent: #00d68f;
+  --accent2: #0088ff;
+  --text: #e8f0fe;
+  --muted: #6b7f99;
+  --bull: #00d68f;
+  --bear: #ff4757;
+  --note: #ffc107;
+  --card-bg: #141e2d;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --shadow: 0 4px 24px rgba(0,0,0,0.5);
+  --status-h: 0px;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  width: 100%; height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
+  overflow: hidden;
+  touch-action: none;
+}
+
+/* Prevent text selection during touch */
+* { user-select: none; -webkit-user-select: none; }
+input, textarea { user-select: text; -webkit-user-select: text; }
+
+/* ══════════════════════════════════════════
+   SPLASH / LOADING
+══════════════════════════════════════════ */
+#splash {
+  position: fixed; inset: 0; z-index: 9999;
+  background: var(--bg);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 24px;
+}
+#splash .logo {
+  font-size: 48px; line-height: 1;
+}
+#splash h1 {
+  font-size: 22px; font-weight: 700;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+#splash p { font-size: 13px; color: var(--muted); }
+.spinner {
+  width: 40px; height: 40px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ══════════════════════════════════════════
+   MAIN LAYOUT (3-pane)
+══════════════════════════════════════════ */
+#app {
+  display: none;
+  width: 100%; height: 100%;
+  flex-direction: column;
+}
+#app.ready { display: flex; }
+
+/* ── Top Bar ── */
+#topbar {
+  height: 56px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 14px;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 100;
+}
+#topbar-title {
+  font-size: 16px; font-weight: 700;
+  color: var(--accent); flex: 1;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#topbar-info {
+  font-size: 11px; color: var(--muted);
+  white-space: nowrap;
+}
+.icon-btn {
+  width: 38px; height: 38px;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text); font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.icon-btn:active { background: var(--border); }
+.icon-btn.active { background: rgba(0,214,143,0.15); border-color: var(--accent); color: var(--accent); }
+
+/* ── Content area ── */
+#content {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ══════════════════════════════════════════
+   SIDE DRAWER (filter panel)
+══════════════════════════════════════════ */
+#drawer {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 280px;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  z-index: 200;
+  transform: translateX(-100%);
+  transition: transform 0.28s cubic-bezier(0.4,0,0.2,1);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+#drawer.open { transform: translateX(0); }
+
+#drawer-overlay {
+  display: none;
+  position: absolute; inset: 0; z-index: 199;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(2px);
+}
+#drawer-overlay.show { display: block; }
+
+#drawer-header {
+  padding: 16px 16px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+#drawer-header h2 {
+  font-size: 15px; font-weight: 700; color: var(--text);
+  display: flex; align-items: center; gap: 8px;
+}
+#drawer-body {
+  flex: 1; overflow-y: auto; padding: 14px 14px;
+  -webkit-overflow-scrolling: touch;
+}
+#drawer-body::-webkit-scrollbar { width: 4px; }
+#drawer-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.filter-section { margin-bottom: 16px; }
+.filter-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+  color: var(--muted); text-transform: uppercase; margin-bottom: 6px; display: block;
+}
+.filter-select {
+  width: 100%;
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); padding: 10px 12px;
+  border-radius: var(--radius-sm); font-size: 14px;
+  appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7f99' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 32px;
+}
+.filter-select:focus { outline: none; border-color: var(--accent); }
+
+.apply-btn {
+  width: 100%; padding: 12px;
+  background: linear-gradient(135deg, var(--accent), #00b578);
+  color: #000; border: none; border-radius: var(--radius-sm);
+  font-size: 14px; font-weight: 700; cursor: pointer;
+  margin-top: 4px;
+}
+.apply-btn:active { opacity: 0.85; }
+
+#drawer-stats {
+  margin-top: 14px; padding: 12px;
+  background: var(--panel2); border-radius: var(--radius-sm);
+  font-size: 12px; color: var(--muted); line-height: 2;
+}
+#drawer-stats b { color: var(--text); }
+
+/* ══════════════════════════════════════════
+   MAIN VIEW AREA
+══════════════════════════════════════════ */
+#main-view {
+  flex: 1;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ── Image Viewport ── */
+#viewport {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: #000;
+  display: flex; align-items: center; justify-content: center;
+  touch-action: none;
+}
+
+#no-image {
+  text-align: center; color: var(--muted);
+  pointer-events: none;
+}
+#no-image .no-icon { font-size: 56px; margin-bottom: 12px; }
+#no-image p { font-size: 15px; line-height: 1.6; }
+#no-image span { color: var(--accent); }
+
+/* Image element */
+#replay-img {
+  position: absolute;
+  transform-origin: 0 0;
+  max-width: none; max-height: none;
+  display: none;
+  pointer-events: none;
+  will-change: transform;
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+}
+#replay-img.loaded { display: block; }
+
+/* Loading shimmer */
+#img-loader {
+  display: none;
+  position: absolute;
+  width: 48px; height: 48px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  z-index: 5;
+}
+
+/* Overlay info badge */
+#img-overlay {
+  position: absolute; top: 10px; left: 10px;
+  background: rgba(0,0,0,0.75);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  pointer-events: none; z-index: 4;
+  font-size: 12px; line-height: 1.7;
+  max-width: 200px;
+  transition: opacity 0.3s;
+}
+#img-overlay.hide { opacity: 0.2; }
+.ov-symbol { font-weight: 700; color: var(--accent); font-size: 14px; }
+.ov-time { color: var(--text); }
+.ov-tag { color: var(--muted); font-size: 11px; }
+.ov-note { color: var(--note); font-size: 11px; margin-top: 2px; }
+
+/* Zoom badge */
+#zoom-badge {
+  position: absolute; bottom: 10px; right: 10px;
+  background: rgba(0,0,0,0.7);
+  border: 1px solid var(--border);
+  color: var(--muted); font-size: 11px;
+  padding: 3px 8px; border-radius: 20px;
+  pointer-events: none; z-index: 4;
+  opacity: 0; transition: opacity 0.3s;
+}
+#zoom-badge.show { opacity: 1; }
+
+/* Frame counter badge */
+#frame-badge {
+  position: absolute; bottom: 10px; left: 10px;
+  background: rgba(0,0,0,0.7);
+  border: 1px solid var(--border);
+  color: var(--muted); font-size: 11px;
+  padding: 3px 8px; border-radius: 20px;
+  pointer-events: none; z-index: 4;
+}
+
+/* ── Timeline Scrubber ── */
+#scrubber-wrap {
+  padding: 6px 12px 2px;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+#scrubber {
+  width: 100%; height: 6px;
+  -webkit-appearance: none; appearance: none;
+  background: var(--border); border-radius: 3px;
+  cursor: pointer; outline: none;
+}
+#scrubber::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid #fff;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+  cursor: pointer;
+}
+#scrubber::-webkit-slider-runnable-track {
+  height: 6px; border-radius: 3px;
+}
+#timeline-dates {
+  display: flex; justify-content: space-between;
+  font-size: 10px; color: var(--muted);
+  margin-top: 3px; padding: 0 2px;
+}
+
+/* ── Controls Bar ── */
+#controls {
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  padding: 10px 14px;
+  display: flex; align-items: center; gap: 8px;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+}
+
+/* Playback buttons */
+.ctrl-btn {
+  height: 42px;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text); font-size: 13px; font-weight: 600;
+  cursor: pointer; white-space: nowrap;
+  display: flex; align-items: center; justify-content: center; gap: 5px;
+  padding: 0 14px;
+  transition: all 0.12s;
+  flex-shrink: 0;
+}
+.ctrl-btn:active { transform: scale(0.96); }
+.ctrl-btn.play { background: var(--accent); color: #000; border-color: transparent; }
+.ctrl-btn.play:active { opacity: 0.88; }
+.ctrl-btn.step { width: 42px; padding: 0; font-size: 18px; }
+
+/* Speed control */
+#speed-wrap {
+  display: flex; align-items: center; gap: 6px;
+  flex-shrink: 0;
+}
+#speed-label {
+  font-size: 11px; color: var(--muted); white-space: nowrap;
+}
+#speed-range {
+  width: 80px; height: 4px;
+  -webkit-appearance: none; appearance: none;
+  background: var(--border); border-radius: 2px;
+  cursor: pointer; outline: none;
+}
+#speed-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: var(--accent2);
+  border: 2px solid #fff;
+  cursor: pointer;
+}
+#speed-val {
+  font-size: 12px; color: var(--accent2); font-weight: 700;
+  min-width: 28px; text-align: right;
+}
+
+/* Note input area */
+#note-wrap {
+  flex: 1; display: flex; gap: 6px; align-items: center;
+  min-width: 0;
+}
+#note-input {
+  flex: 1; height: 38px; min-width: 0;
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); padding: 0 10px;
+  border-radius: var(--radius-sm); font-size: 13px;
+}
+#note-input:focus { outline: none; border-color: var(--accent); }
+#note-input::placeholder { color: var(--muted); }
+
+#mark-sel {
+  height: 38px;
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); padding: 0 8px;
+  border-radius: var(--radius-sm); font-size: 13px;
+  flex-shrink: 0;
+}
+.save-note-btn {
+  height: 38px; padding: 0 14px;
+  background: var(--panel2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--accent);
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  flex-shrink: 0;
+}
+.save-note-btn:active { opacity: 0.8; }
+
+/* ══════════════════════════════════════════
+   GALLERY VIEW (bottom sheet / tab)
+══════════════════════════════════════════ */
+#gallery-sheet {
+  position: absolute; inset: 0; z-index: 300;
+  background: var(--bg);
+  transform: translateY(100%);
+  transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
+  display: flex; flex-direction: column;
+}
+#gallery-sheet.open { transform: translateY(0); }
+
+#gallery-header {
+  height: 56px; background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px; padding: 0 14px;
+  flex-shrink: 0;
+}
+#gallery-title { font-size: 15px; font-weight: 700; flex: 1; }
+#gallery-count { font-size: 12px; color: var(--muted); }
+
+#gallery-search-wrap {
+  padding: 10px 14px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+#gallery-search {
+  width: 100%; height: 38px;
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); padding: 0 12px;
+  border-radius: 20px; font-size: 14px;
+}
+#gallery-search:focus { outline: none; border-color: var(--accent); }
+#gallery-search::placeholder { color: var(--muted); }
+
+#gallery-grid {
+  flex: 1; overflow-y: auto;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+  -webkit-overflow-scrolling: touch;
+}
+#gallery-grid::-webkit-scrollbar { width: 4px; }
+#gallery-grid::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.gallery-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden; cursor: pointer;
+  transition: border-color 0.15s;
+  position: relative;
+  aspect-ratio: 16/9;
+}
+.gallery-card:active { border-color: var(--accent); transform: scale(0.97); }
+.gallery-card img {
+  width: 100%; height: 100%;
+  object-fit: cover; display: block;
+  background: #111;
+}
+.gallery-card-info {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  background: linear-gradient(transparent, rgba(0,0,0,0.85));
+  padding: 16px 6px 5px;
+  font-size: 10px; color: #ddd;
+  line-height: 1.4;
+}
+.gallery-card-sym { font-weight: 700; font-size: 11px; color: var(--accent); }
+.gc-mark-bar { position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+.gc-mark-bar.BULL { background: var(--bull); }
+.gc-mark-bar.BEAR { background: var(--bear); }
+.gc-mark-bar.NOTE { background: var(--note); }
+
+/* ══════════════════════════════════════════
+   TAB BAR (bottom navigation)
+══════════════════════════════════════════ */
+#tabbar {
+  height: calc(56px + var(--safe-bottom));
+  padding-bottom: var(--safe-bottom);
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-shrink: 0;
+  z-index: 50;
+}
+.tab-item {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 3px; cursor: pointer;
+  color: var(--muted); font-size: 10px; font-weight: 500;
+  transition: color 0.15s;
+  padding: 6px 0;
+}
+.tab-item .tab-icon { font-size: 22px; line-height: 1; }
+.tab-item.active { color: var(--accent); }
+.tab-item:active { opacity: 0.7; }
+
+/* ══════════════════════════════════════════
+   TOAST NOTIFICATION
+══════════════════════════════════════════ */
+#toast {
+  position: fixed; bottom: 80px; left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--panel2); border: 1px solid var(--border);
+  color: var(--text); padding: 10px 20px;
+  border-radius: 24px; font-size: 13px;
+  pointer-events: none; z-index: 9999;
+  opacity: 0; transition: all 0.25s;
+  white-space: nowrap;
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ══════════════════════════════════════════
+   RESPONSIVE: Landscape / Tablet
+══════════════════════════════════════════ */
+@media (orientation: landscape) and (max-height: 500px) {
+  #topbar { height: 44px; }
+  #controls { padding: 6px 10px; }
+  .ctrl-btn { height: 36px; }
+  #tabbar { height: calc(48px + var(--safe-bottom)); }
+  .tab-item .tab-icon { font-size: 18px; }
+}
+@media (min-width: 600px) {
+  #gallery-grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+}
+@media (min-width: 900px) {
+  #drawer { position: relative; transform: none; width: 260px; }
+  #drawer-overlay { display: none !important; }
+  .menu-btn { display: none !important; }
+  #content { overflow: visible; }
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════ SPLASH ═══════════════════ -->
+<div id="splash">
+  <div class="logo">📈</div>
+  <h1>Trading Replay</h1>
+  <p>Loading market data…</p>
+  <div class="spinner"></div>
+</div>
+
+<!-- ═══════════════════ APP ═══════════════════ -->
+<div id="app">
+
+  <!-- Top Bar -->
+  <div id="topbar">
+    <button class="icon-btn menu-btn" id="menu-btn" onclick="toggleDrawer()" title="Filters">☰</button>
+    <div id="topbar-title">📈 Trading Replay</div>
+    <div id="topbar-info">—</div>
+    <button class="icon-btn" id="refresh-btn" onclick="refreshData()" title="Refresh data">🔄</button>
+    <button class="icon-btn" id="fullscreen-btn" onclick="toggleFullscreen()" title="Fullscreen">⛶</button>
+  </div>
+
+  <!-- Content -->
+  <div id="content">
+
+    <!-- Side Drawer -->
+    <div id="drawer-overlay" onclick="closeDrawer()"></div>
+    <div id="drawer">
+      <div id="drawer-header">
+        <h2>🎛️ Filters</h2>
+      </div>
+      <div id="drawer-body">
+        <div class="filter-section">
+          <label class="filter-label">Symbol</label>
+          <select class="filter-select" id="f-symbol" onchange="applyFilters()">
+            <option value="">All Symbols</option>
+          </select>
+        </div>
+        <div class="filter-section">
+          <label class="filter-label">Market</label>
+          <select class="filter-select" id="f-market" onchange="applyFilters()">
+            <option value="">All Markets</option>
+          </select>
+        </div>
+        <div class="filter-section">
+          <label class="filter-label">Month</label>
+          <select class="filter-select" id="f-month" onchange="applyFilters()">
+            <option value="">All Months</option>
+          </select>
+        </div>
+        <div class="filter-section">
+          <label class="filter-label">Tag / Session</label>
+          <select class="filter-select" id="f-tag" onchange="applyFilters()">
+            <option value="">All Tags</option>
+          </select>
+        </div>
+        <div class="filter-section">
+          <label class="filter-label">Sort</label>
+          <select class="filter-select" id="f-sort" onchange="applyFilters()">
+            <option value="newest">Newest First</option>
+            <option value="oldest">Oldest First</option>
+            <option value="symbol">Symbol A→Z</option>
+          </select>
+        </div>
+        <div id="drawer-stats"></div>
+      </div>
+    </div>
+
+    <!-- Main View -->
+    <div id="main-view">
+
+      <!-- Viewport -->
+      <div id="viewport" id="viewport">
+        <div id="no-image">
+          <div class="no-icon">📊</div>
+          <p>Select a symbol above<br><span>to start replay</span></p>
+        </div>
+        <img id="replay-img" src="" alt="Chart"/>
+        <div id="img-loader"></div>
+        <div id="img-overlay" style="display:none">
+          <div class="ov-symbol" id="ov-sym">—</div>
+          <div class="ov-time" id="ov-time">—</div>
+          <div class="ov-tag" id="ov-tag"></div>
+          <div class="ov-note" id="ov-note"></div>
+        </div>
+        <div id="zoom-badge">100%</div>
+        <div id="frame-badge">— / —</div>
+      </div>
+
+      <!-- Scrubber -->
+      <div id="scrubber-wrap">
+        <input type="range" id="scrubber" min="0" max="0" value="0"
+               oninput="onScrub(this.value)" onchange="onScrub(this.value)"/>
+        <div id="timeline-dates">
+          <span id="tl-start">—</span>
+          <span id="tl-end">—</span>
+        </div>
+      </div>
+
+      <!-- Controls -->
+      <div id="controls">
+        <button class="ctrl-btn step" onclick="step(-5)" title="Back 5">⏪</button>
+        <button class="ctrl-btn step" onclick="step(-1)" title="Prev">◀</button>
+        <button class="ctrl-btn play" id="play-btn" onclick="togglePlay()">▶</button>
+        <button class="ctrl-btn step" onclick="step(1)" title="Next">▶</button>
+        <button class="ctrl-btn step" onclick="step(5)" title="Fwd 5">⏩</button>
+        <div id="speed-wrap">
+          <span id="speed-label">Speed</span>
+          <input type="range" id="speed-range" min="0" max="5" value="1" step="1"
+                 oninput="onSpeedChange(this.value)"/>
+          <span id="speed-val">1×</span>
+        </div>
+      </div>
+
+      <!-- Note bar -->
+      <div style="background:var(--panel);border-top:1px solid var(--border);padding:8px 12px;display:flex;gap:8px;flex-shrink:0;">
+        <input type="text" id="note-input" placeholder="📝 Note for this frame…"/>
+        <select id="mark-sel" class="filter-select" style="width:auto;flex-shrink:0;height:38px;padding:0 28px 0 8px;">
+          <option value="">—</option>
+          <option value="BULL">🟢 Bull</option>
+          <option value="BEAR">🔴 Bear</option>
+          <option value="NOTE">📝 Note</option>
+        </select>
+        <button class="save-note-btn" onclick="saveNote()">Save</button>
+      </div>
+
+    </div><!-- end main-view -->
+  </div><!-- end content -->
+
+  <!-- Gallery Sheet -->
+  <div id="gallery-sheet">
+    <div id="gallery-header">
+      <button class="icon-btn" onclick="closeGallery()">✕</button>
+      <span id="gallery-title">📷 Gallery</span>
+      <span id="gallery-count">0 images</span>
+    </div>
+    <div id="gallery-search-wrap">
+      <input type="text" id="gallery-search" placeholder="🔍 Search symbol, date…"
+             oninput="renderGallery(this.value)"/>
+    </div>
+    <div id="gallery-grid"></div>
+  </div>
+
+  <!-- Tab Bar -->
+  <div id="tabbar">
+    <div class="tab-item active" id="tab-replay" onclick="switchTab('replay')">
+      <span class="tab-icon">▶️</span>
+      <span>Replay</span>
+    </div>
+    <div class="tab-item" id="tab-gallery" onclick="switchTab('gallery')">
+      <span class="tab-icon">🖼️</span>
+      <span>Gallery</span>
+    </div>
+    <div class="tab-item" id="tab-filter" onclick="toggleDrawer()">
+      <span class="tab-icon">🎛️</span>
+      <span>Filter</span>
+    </div>
+  </div>
+
+</div><!-- end #app -->
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════
+   CONSTANTS & STATE
+═══════════════════════════════════════════════════════════ */
+const DATA_URL = 'https://raw.githubusercontent.com/sp33dz/tv-screenshot/refs/heads/main/gallery/data.json';
+const SPEEDS   = [0.25, 0.5, 1, 2, 4, 8];   // maps to range 0-5
+const PRELOAD  = 5;
+
+let ALL      = [];
+let SOURCE   = [];   // filtered + sorted
+let NOTES    = {};
+let idx      = 0;
+let playing  = false;
+let speedIdx = 2;    // default 1×
+let timer    = null;
+let lastRefresh = 0;
+
+// ── Zoom/Pan ──
+let zoom  = 1.0;
+let panX  = 0;
+let panY  = 0;
+let fitW  = 0;
+let fitH  = 0;
+let zoomBadgeTimer = null;
+
+// Touch gesture state
+let _touches     = {};
+let _lastPinchD  = 0;
+let _panStartX   = 0;
+let _panStartY   = 0;
+let _isPanning   = false;
+let _longPressT  = null;
+
+const vp    = document.getElementById('viewport');
+const img   = document.getElementById('replay-img');
+const imgCache = new Map();
+
+/* ═══════════════════════════════════════════════════════════
+   DATA LOADING
+═══════════════════════════════════════════════════════════ */
+async function loadData(showSplash = true) {
+  try {
+    const res  = await fetch(DATA_URL + '?_=' + Date.now());
+    const data = await res.json();
+    ALL = data.entries || [];
+    NOTES = (typeof AndroidBridge !== 'undefined')
+      ? JSON.parse(AndroidBridge.getNotes() || '{}')
+      : JSON.parse(localStorage.getItem('tv_notes') || '{}');
+
+    populateFilters(data);
+    updateDrawerStats(data);
+    applyFilters();
+    lastRefresh = Date.now();
+    return true;
+  } catch (e) {
+    console.error('Load data error:', e);
+    toast('⚠️ Network error — check connection');
+    return false;
+  }
+}
+
+function populateFilters(data) {
+  fill('f-symbol', data.symbols || []);
+  fill('f-market', data.markets || []);
+  fill('f-month',  data.months  || []);
+  fill('f-tag',    data.tags    || []);
+}
+
+function fill(id, arr) {
+  const sel = document.getElementById(id);
+  const first = sel.options[0];
+  sel.innerHTML = '';
+  sel.appendChild(first.cloneNode(true));
+  arr.forEach(v => {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = v;
+    sel.appendChild(o);
+  });
+}
+
+function updateDrawerStats(data) {
+  document.getElementById('drawer-stats').innerHTML =
+    `<b>${data.total_files || ALL.length}</b> images<br>
+     <b>${(data.symbols||[]).length}</b> symbols<br>
+     <b>${(data.markets||[]).length}</b> markets<br>
+     Updated: <b>${(data.generated_at||'').slice(0,16)}</b>`;
+}
+
+async function refreshData() {
+  const btn = document.getElementById('refresh-btn');
+  btn.style.animation = 'spin 0.5s linear infinite';
+  await loadData(false);
+  btn.style.animation = '';
+  toast('✅ Data refreshed');
+}
+
+/* ═══════════════════════════════════════════════════════════
+   FILTERS & SOURCE
+═══════════════════════════════════════════════════════════ */
+function applyFilters() {
+  const sym  = document.getElementById('f-symbol').value;
+  const mkt  = document.getElementById('f-market').value;
+  const mon  = document.getElementById('f-month').value;
+  const tag  = document.getElementById('f-tag').value;
+  const sort = document.getElementById('f-sort').value;
+
+  SOURCE = ALL.filter(e =>
+    (!sym || e.symbol === sym) &&
+    (!mkt || e.market === mkt) &&
+    (!mon || e.month  === mon) &&
+    (!tag || e.tag    === tag)
+  );
+
+  if (sort === 'newest')
+    SOURCE.sort((a,b) => (b.sort_key||'').localeCompare(a.sort_key||''));
+  else if (sort === 'oldest')
+    SOURCE.sort((a,b) => (a.sort_key||'').localeCompare(b.sort_key||''));
+  else
+    SOURCE.sort((a,b) => (a.symbol||'').localeCompare(b.symbol||'') ||
+                         (a.sort_key||'').localeCompare(b.sort_key||''));
+
+  idx = 0;
+  imgCache.clear();
+  const scr = document.getElementById('scrubber');
+  scr.max = Math.max(0, SOURCE.length - 1);
+  scr.value = 0;
+  updateTimeline();
+  renderFrame();
+  updateTopbarInfo();
+}
+
+function updateTimeline() {
+  document.getElementById('tl-start').textContent = SOURCE.length ? SOURCE[0].date : '—';
+  document.getElementById('tl-end').textContent   = SOURCE.length ? SOURCE[SOURCE.length-1].date : '—';
+}
+
+function updateTopbarInfo() {
+  document.getElementById('topbar-info').textContent =
+    SOURCE.length ? `${idx+1}/${SOURCE.length}` : '—';
+}
+
+/* ═══════════════════════════════════════════════════════════
+   IMAGE URL
+   Strategy:
+   1. ถ้ามี drive_public_url → แปลงเป็น lh3.googleusercontent.com/d/FILE_ID
+      (direct URL ไม่มี redirect chain → ทำงานได้ดีใน Android WebView)
+   2. ถ้าไม่มี drive_public_url → fallback ไปยัง GitHub raw
+═══════════════════════════════════════════════════════════ */
+function extractDriveId(url) {
+  if (!url) return null;
+  // รองรับ formats:
+  // https://drive.google.com/file/d/FILE_ID/view
+  // https://drive.google.com/file/d/FILE_ID/preview
+  // https://drive.google.com/open?id=FILE_ID
+  // https://drive.google.com/thumbnail?id=FILE_ID&sz=...
+  // https://drive.google.com/uc?id=FILE_ID&export=view
+  // https://lh3.googleusercontent.com/d/FILE_ID
+  var m;
+  m = url.match(/\/d\/([a-zA-Z0-9_-]{20,})/);
+  if (m) return m[1];
+  m = url.match(/[?&]id=([a-zA-Z0-9_-]{20,})/);
+  if (m) return m[1];
+  return null;
+}
+
+function getUrl(e) {
+  if (e.drive_public_url && e.drive_public_url.trim()) {
+    var raw = e.drive_public_url.trim();
+    // ถ้าเป็น lh3 URL อยู่แล้ว → ใช้เลย
+    if (raw.indexOf('lh3.googleusercontent.com') !== -1) {
+      return raw;
+    }
+    // ดึง File ID แล้วสร้าง lh3 URL ใหม่ (ไม่มี redirect, ไม่ต้อง auth สำหรับ public files)
+    var fileId = extractDriveId(raw);
+    if (fileId) {
+      return 'https://lh3.googleusercontent.com/d/' + fileId;
+    }
+    // ถ้าดึง ID ไม่ได้ → ใช้ URL เดิม (fallback)
+    return raw;
+  }
+  return 'https://raw.githubusercontent.com/sp33dz/tv-screenshot/refs/heads/main/gallery/screenshots/' + e.path;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   RENDER FRAME
+═══════════════════════════════════════════════════════════ */
+function renderFrame() {
+  const noImg = document.getElementById('no-image');
+  const ov    = document.getElementById('img-overlay');
+  const loader = document.getElementById('img-loader');
+
+  document.getElementById('frame-badge').textContent =
+    SOURCE.length ? `${idx+1} / ${SOURCE.length}` : '— / —';
+
+  if (!SOURCE.length) {
+    img.classList.remove('loaded');
+    noImg.style.display = '';
+    ov.style.display = 'none';
+    document.getElementById('topbar-title').textContent = '📈 Trading Replay';
+    return;
+  }
+  noImg.style.display = 'none';
+
+  const e = SOURCE[idx];
+  const url = getUrl(e);
+
+  // Preload next frames
+  preloadAround(idx);
+
+  // Show loader
+  loader.style.display = '';
+
+  const cached = imgCache.get(url);
+  if (cached && cached.complete && cached.naturalWidth > 0) {
+    applyImage(cached, e);
+    loader.style.display = 'none';
+  } else {
+    const newImg = new Image();
+    newImg.onload = () => {
+      imgCache.set(url, newImg);
+      if (SOURCE[idx] === e) {
+        applyImage(newImg, e);
+        loader.style.display = 'none';
+      }
+    };
+    newImg.onerror = () => {
+      loader.style.display = 'none';
+      toast('⚠️ Image load failed');
+    };
+    newImg.src = url;
+    imgCache.set(url, newImg);
+  }
+
+  // Update overlay
+  ov.style.display = '';
+  document.getElementById('ov-sym').textContent  = e.symbol + ' · ' + e.market;
+  document.getElementById('ov-time').textContent = e.datetime_str || (e.date + ' ' + e.time);
+  document.getElementById('ov-tag').textContent  = e.tag || '';
+  const n = NOTES[e.path];
+  document.getElementById('ov-note').textContent = n && n.note ? '📝 ' + n.note : '';
+  document.getElementById('note-input').value    = (n && n.note) || '';
+  document.getElementById('mark-sel').value      = (n && n.trade_mark) || '';
+
+  document.getElementById('topbar-title').textContent = `${e.symbol} · ${e.market}`;
+  document.getElementById('topbar-info').textContent  = `${idx+1}/${SOURCE.length}`;
+  document.getElementById('scrubber').value = idx;
+
+  // Notify Android bridge
+  if (typeof AndroidBridge !== 'undefined') {
+    AndroidBridge.onFrameChange(JSON.stringify({
+      symbol: e.symbol, market: e.market, date: e.date,
+      time: e.time, idx, total: SOURCE.length
+    }));
+  }
+}
+
+function applyImage(srcImg, entry) {
+  img.src = srcImg.src;
+  img.classList.add('loaded');
+  fitImage(srcImg.naturalWidth, srcImg.naturalHeight);
+}
+
+function fitImage(natW, natH) {
+  const vr = vp.getBoundingClientRect();
+  const scale = Math.min(vr.width / natW, vr.height / natH);
+  fitW = natW * scale;
+  fitH = natH * scale;
+  // Set CSS size
+  img.style.width  = natW + 'px';
+  img.style.height = natH + 'px';
+  // Reset zoom and pan to fit
+  if (zoom === 1.0 && panX === 0 && panY === 0) {
+    img.style.transform = `translate(${(vr.width-fitW)/2}px,${(vr.height-fitH)/2}px) scale(${scale})`;
+    img.dataset.baseScale = scale;
+    img.dataset.natW = natW;
+    img.dataset.natH = natH;
+  } else {
+    applyZoom();
+  }
+}
+
+function preloadAround(ci) {
+  if (!SOURCE.length) return;
+  const lo = Math.max(0, ci - 1);
+  const hi = Math.min(SOURCE.length - 1, ci + PRELOAD);
+  const keep = new Set();
+  for (let i = lo; i <= hi; i++) {
+    const url = getUrl(SOURCE[i]);
+    keep.add(url);
+    if (!imgCache.has(url)) {
+      const pi = new Image();
+      pi.src = url;
+      imgCache.set(url, pi);
+    }
+  }
+  for (const [url] of imgCache) {
+    if (!keep.has(url)) imgCache.delete(url);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ZOOM / PAN
+═══════════════════════════════════════════════════════════ */
+function applyZoom() {
+  if (!img.dataset.baseScale) return;
+  const vr = vp.getBoundingClientRect();
+  const baseScale = parseFloat(img.dataset.baseScale);
+  const natW = parseFloat(img.dataset.natW) || fitW;
+  const natH = parseFloat(img.dataset.natH) || fitH;
+  const cx = (vr.width  - fitW) / 2 + panX;
+  const cy = (vr.height - fitH) / 2 + panY;
+  img.style.transform = `translate(${cx}px,${cy}px) scale(${baseScale * zoom})`;
+
+  const badge = document.getElementById('zoom-badge');
+  badge.textContent = Math.round(zoom * 100) + '%';
+  badge.classList.add('show');
+  clearTimeout(zoomBadgeTimer);
+  zoomBadgeTimer = setTimeout(() => badge.classList.remove('show'), 1500);
+}
+
+function zoomReset() {
+  zoom = 1.0; panX = 0; panY = 0;
+  applyZoom();
+}
+
+function clampPan() {
+  const vr = vp.getBoundingClientRect();
+  const scaledW = fitW * zoom;
+  const scaledH = fitH * zoom;
+  const mx = Math.max(scaledW * 0.25, 60);
+  const my = Math.max(scaledH * 0.25, 60);
+  panX = Math.max(-(scaledW - fitW)/2 - mx, Math.min((scaledW - fitW)/2 + mx, panX));
+  panY = Math.max(-(scaledH - fitH)/2 - my, Math.min((scaledH - fitH)/2 + my, panY));
+}
+
+/* ── Touch Handlers ── */
+vp.addEventListener('touchstart', e => {
+  if (e.target.closest('#play-hud')) return;
+
+  const touches = Array.from(e.touches);
+  _touches = {};
+  touches.forEach(t => _touches[t.identifier] = { x: t.clientX, y: t.clientY });
+
+  if (touches.length === 1) {
+    _panStartX = touches[0].clientX - panX;
+    _panStartY = touches[0].clientY - panY;
+    _isPanning = zoom > 1.0;
+    // Long press to reset zoom
+    _longPressT = setTimeout(() => {
+      if (zoom !== 1.0) { zoomReset(); toast('Zoom reset'); }
+    }, 600);
+  } else if (touches.length === 2) {
+    clearTimeout(_longPressT);
+    _lastPinchD = Math.hypot(
+      touches[0].clientX - touches[1].clientX,
+      touches[0].clientY - touches[1].clientY
+    );
+  }
+}, { passive: true });
+
+vp.addEventListener('touchmove', e => {
+  e.preventDefault();
+  clearTimeout(_longPressT);
+  const touches = Array.from(e.touches);
+
+  if (touches.length === 2) {
+    // Pinch to zoom
+    const d = Math.hypot(
+      touches[0].clientX - touches[1].clientX,
+      touches[0].clientY - touches[1].clientY
+    );
+    if (_lastPinchD > 0) {
+      const factor = d / _lastPinchD;
+      zoom = Math.min(Math.max(zoom * factor, 0.5), 8);
+      clampPan();
+      applyZoom();
+    }
+    _lastPinchD = d;
+  } else if (touches.length === 1 && _isPanning) {
+    // Pan
+    panX = touches[0].clientX - _panStartX;
+    panY = touches[0].clientY - _panStartY;
+    clampPan();
+    applyZoom();
+  }
+}, { passive: false });
+
+vp.addEventListener('touchend', e => {
+  clearTimeout(_longPressT);
+  _lastPinchD = 0;
+  if (e.touches.length === 0) _isPanning = false;
+
+  // Tap to toggle overlay
+  if (e.changedTouches.length === 1 && !_isPanning) {
+    const ov = document.getElementById('img-overlay');
+    ov.classList.toggle('hide');
+  }
+}, { passive: true });
+
+// Double-tap to zoom
+let lastTap = 0;
+vp.addEventListener('touchend', e => {
+  const now = Date.now();
+  if (now - lastTap < 300 && e.changedTouches.length === 1) {
+    // Double tap
+    if (zoom < 1.5) {
+      // Zoom in toward tap point
+      const t = e.changedTouches[0];
+      const vr = vp.getBoundingClientRect();
+      const mx = t.clientX - vr.left;
+      const my = t.clientY - vr.top;
+      const originX = (vr.width  - fitW) / 2 + panX;
+      const originY = (vr.height - fitH) / 2 + panY;
+      const imgX = (mx - originX) / zoom;
+      const imgY = (my - originY) / zoom;
+      const newZ = 2.5;
+      panX = mx - imgX * newZ - (vr.width  - fitW) / 2;
+      panY = my - imgY * newZ - (vr.height - fitH) / 2;
+      zoom = newZ;
+      clampPan();
+      applyZoom();
+    } else {
+      zoomReset();
+    }
+    e.preventDefault();
+  }
+  lastTap = now;
+}, { passive: false });
+
+/* ═══════════════════════════════════════════════════════════
+   PLAYBACK
+═══════════════════════════════════════════════════════════ */
+function togglePlay() {
+  playing = !playing;
+  const btn = document.getElementById('play-btn');
+  btn.textContent = playing ? '⏸' : '▶';
+  btn.className = 'ctrl-btn ' + (playing ? '' : 'play');
+  if (playing) { btn.textContent = '⏸'; btn.style.background = '#333'; btn.style.color = '#fff'; }
+  else { btn.textContent = '▶'; btn.style.background = ''; btn.style.color = ''; btn.className = 'ctrl-btn play'; }
+  if (playing) advanceFrame();
+  else clearTimeout(timer);
+}
+
+async function advanceFrame() {
+  if (!playing) return;
+  if (idx >= SOURCE.length - 1) {
+    playing = false;
+    const btn = document.getElementById('play-btn');
+    btn.textContent = '▶'; btn.className = 'ctrl-btn play';
+    return;
+  }
+  const ms = 1000 / SPEEDS[speedIdx];
+  const t0 = Date.now();
+  idx++;
+  document.getElementById('scrubber').value = idx;
+  renderFrame();
+  if (!playing) return;
+  const wait = Math.max(0, ms - (Date.now() - t0));
+  timer = setTimeout(advanceFrame, wait);
+}
+
+function step(d) {
+  clearTimeout(timer); playing = false;
+  const btn = document.getElementById('play-btn');
+  btn.textContent = '▶'; btn.className = 'ctrl-btn play';
+  idx = Math.max(0, Math.min(SOURCE.length - 1, idx + d));
+  renderFrame();
+}
+
+function onScrub(v) {
+  clearTimeout(timer); playing = false;
+  idx = parseInt(v, 10);
+  renderFrame();
+}
+
+function onSpeedChange(v) {
+  speedIdx = parseInt(v, 10);
+  document.getElementById('speed-val').textContent = SPEEDS[speedIdx] + '×';
+}
+
+/* ═══════════════════════════════════════════════════════════
+   NOTES / ANNOTATIONS
+═══════════════════════════════════════════════════════════ */
+function saveNote() {
+  if (!SOURCE.length) return;
+  const e    = SOURCE[idx];
+  const note = document.getElementById('note-input').value.trim();
+  const mark = document.getElementById('mark-sel').value;
+  NOTES[e.path] = { path: e.path, note, trade_mark: mark, updated_at: new Date().toISOString() };
+  if (typeof AndroidBridge !== 'undefined') {
+    AndroidBridge.saveNotes(JSON.stringify(NOTES));
+  } else {
+    try { localStorage.setItem('tv_notes', JSON.stringify(NOTES)); } catch(_) {}
+  }
+  renderFrame();
+  toast(mark ? `✅ Saved [${mark}]` : '✅ Note saved');
+}
+
+/* ═══════════════════════════════════════════════════════════
+   GALLERY VIEW
+═══════════════════════════════════════════════════════════ */
+function renderGallery(query) {
+  const q   = (query || '').toLowerCase().trim();
+  const arr = q ? ALL.filter(e =>
+    (e.symbol + ' ' + e.date + ' ' + e.market + ' ' + (e.tag||'')).toLowerCase().includes(q)
+  ) : SOURCE;
+
+  document.getElementById('gallery-count').textContent = arr.length + ' images';
+  const grid = document.getElementById('gallery-grid');
+  grid.innerHTML = '';
+  const frag = document.createDocumentFragment();
+
+  arr.slice(0, 200).forEach((e, i) => {
+    const n    = NOTES[e.path];
+    const mark = (n && n.trade_mark) || '';
+    const card = document.createElement('div');
+    card.className = 'gallery-card';
+    const imgUrl = getUrl(e);
+    card.innerHTML = `
+      ${mark ? `<div class="gc-mark-bar ${mark}"></div>` : ''}
+      <img src="${imgUrl}" loading="lazy" onerror="this.style.opacity=0.3"/>
+      <div class="gallery-card-info">
+        <div class="gallery-card-sym">${e.symbol}</div>
+        <div>${e.date} ${(e.time||'').replace('-',':')} · ${e.market}</div>
+        ${e.tag ? `<div style="color:var(--accent);font-size:9px">${e.tag}</div>` : ''}
+      </div>`;
+    card.onclick = () => {
+      const srcIdx = SOURCE.findIndex(s => s.path === e.path);
+      if (srcIdx >= 0) {
+        idx = srcIdx;
+      } else {
+        // Switch filter to show this image
+        document.getElementById('f-symbol').value = e.symbol;
+        applyFilters();
+        idx = SOURCE.findIndex(s => s.path === e.path);
+        if (idx < 0) idx = 0;
+      }
+      closeGallery();
+      renderFrame();
+      toast(`Jumped to ${e.symbol} ${e.date}`);
+    };
+    frag.appendChild(card);
+  });
+  grid.appendChild(frag);
+}
+
+function closeGallery() {
+  document.getElementById('gallery-sheet').classList.remove('open');
+  document.getElementById('tab-gallery').classList.remove('active');
+  document.getElementById('tab-replay').classList.add('active');
+}
+
+/* ═══════════════════════════════════════════════════════════
+   UI HELPERS
+═══════════════════════════════════════════════════════════ */
+function toggleDrawer() {
+  const d  = document.getElementById('drawer');
+  const ov = document.getElementById('drawer-overlay');
+  const open = !d.classList.contains('open');
+  d.classList.toggle('open', open);
+  ov.classList.toggle('show', open);
+}
+function closeDrawer() {
+  document.getElementById('drawer').classList.remove('open');
+  document.getElementById('drawer-overlay').classList.remove('show');
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
+  if (tab === 'gallery') {
+    document.getElementById('tab-gallery').classList.add('active');
+    document.getElementById('gallery-sheet').classList.add('open');
+    renderGallery('');
+  } else {
+    document.getElementById('tab-replay').classList.add('active');
+    document.getElementById('gallery-sheet').classList.remove('open');
+  }
+}
+
+function toggleFullscreen() {
+  if (typeof AndroidBridge !== 'undefined') {
+    AndroidBridge.toggleFullscreen();
+    return;
+  }
+  const vp2 = document.getElementById('viewport');
+  if (!document.fullscreenElement) {
+    (vp2.requestFullscreen || vp2.webkitRequestFullscreen || (() => {})).call(vp2);
+  } else {
+    (document.exitFullscreen || document.webkitExitFullscreen || (() => {})).call(document);
+  }
+}
+
+let _toastTimer = null;
+function toast(msg, ms = 2000) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove('show'), ms);
+}
+
+/* ── Keyboard shortcut (desktop/Chromebook) ── */
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === 'ArrowLeft')  step(-1);
+  if (e.key === 'ArrowRight') step(1);
+  if (e.key === ' ')          { e.preventDefault(); togglePlay(); }
+  if (e.key === 'f' || e.key === 'F') toggleFullscreen();
+  if (e.key === '0') zoomReset();
+});
+
+/* ── Android back button ── */
+window.onBackPressed = function() {
+  const gs = document.getElementById('gallery-sheet');
+  const dr = document.getElementById('drawer');
+  if (gs.classList.contains('open')) { closeGallery(); return true; }
+  if (dr.classList.contains('open')) { closeDrawer(); return true; }
+  if (playing) { togglePlay(); return true; }
+  return false;
+};
+
+/* ── Window resize ── */
+window.addEventListener('resize', () => {
+  if (img.classList.contains('loaded') && img.dataset.natW) {
+    fitImage(parseFloat(img.dataset.natW), parseFloat(img.dataset.natH));
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════════════════════ */
+(async () => {
+  const ok = await loadData(true);
+  document.getElementById('splash').style.display = 'none';
+  document.getElementById('app').classList.add('ready');
+  if (!ok) toast('⚠️ Could not load data. Check network.', 4000);
+
+  // Auto-refresh every hour
+  setInterval(() => {
+    if (Date.now() - lastRefresh > 3600000) refreshData();
+  }, 60000);
+})();
+</script>
+</body>
+</html>
