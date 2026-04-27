@@ -1901,21 +1901,24 @@ function renderGrid() {
   const grid  = document.getElementById('grid');
   const empty = document.getElementById('empty');
   document.getElementById('count').textContent = `${FILTERED.length} of ${ALL.length} images`;
+  // Remove old cards but keep #empty placeholder
   Array.from(grid.children).forEach(c => { if (c !== empty) c.remove(); });
   if (!FILTERED.length) { empty.style.display = 'block'; return; }
   empty.style.display = 'none';
+
   const frag = document.createDocumentFragment();
   FILTERED.forEach((e, i) => {
     const n    = NOTES[e.path];
     const mark = n?.trade_mark || '';
+    const imgUrl = absPath(e.path, e);
     const card = document.createElement('div');
     card.className = 'card' + (e.is_pinned ? ' pinned' : '');
-    card.onclick   = () => openLightbox(i);
-    const imgUrl = absPath(e.path, e);
+    // Store index as data attribute for event delegation
+    card.dataset.idx = String(i);
     card.innerHTML = `
       ${mark ? `<div class="mark-bar ${mark}"></div>` : ''}
       <div class="card-thumb" id="ct-${i}">
-        <img src="${imgUrl}" alt="${e.symbol}" loading="lazy"
+        <img data-src="${imgUrl}" alt="${e.symbol}"
              onload="this.classList.add('loaded');this.parentElement.classList.add('img-loaded')"
              onerror="this.parentElement.classList.add('img-error')"/>
         <div class="thumb-err">🖼️</div>
@@ -1933,6 +1936,31 @@ function renderGrid() {
     frag.appendChild(card);
   });
   grid.appendChild(frag);
+
+  // Event delegation: one listener on the grid handles all card clicks
+  grid.onclick = function(ev) {
+    const card = ev.target.closest('.card[data-idx]');
+    if (!card) return;
+    const i = parseInt(card.dataset.idx, 10);
+    if (!isNaN(i)) openLightbox(i);
+  };
+
+  // Lazy-load images via IntersectionObserver (300px look-ahead)
+  // Falls back to immediate load on old browsers
+  const imgs = grid.querySelectorAll('img[data-src]');
+  if (typeof IntersectionObserver !== 'undefined') {
+    const io = new IntersectionObserver(function(entries, obs) {
+      entries.forEach(function(entry) {
+        if (!entry.isIntersecting) return;
+        const img = entry.target;
+        if (img.dataset.src) { img.src = img.dataset.src; img.removeAttribute('data-src'); }
+        obs.unobserve(img);
+      });
+    }, { rootMargin: '300px 0px' });
+    imgs.forEach(function(img) { io.observe(img); });
+  } else {
+    imgs.forEach(function(img) { img.src = img.dataset.src; img.removeAttribute('data-src'); });
+  }
 }
 function openReplay() { window.open('replay.html', '_blank'); }
 
@@ -3033,11 +3061,16 @@ function getDateRange() {
   const preset = document.getElementById('sel-date-preset').value;
   if (preset === 'all') return { from: '', to: '' };
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // Use LOCAL date (not UTC) to avoid timezone offset shifting the date.
+  // toISOString() returns UTC which causes Bangkok (UTC+7) to appear 1 day behind.
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
   function fmt(d) {
-    return d.toISOString().slice(0, 10);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + dd;
   }
   function daysAgo(n) {
     const d = new Date(today);
@@ -3077,12 +3110,19 @@ function onDatePresetChange() {
   document.getElementById('date-custom-row').style.display = isCustom ? 'flex' : 'none';
   if (isCustom) {
     // Pre-fill custom inputs with current computed range for convenience
-    const r = getDateRange();
+    // Use local date to avoid UTC timezone offset issues (e.g. UTC+7 Bangkok)
     if (!document.getElementById('date-from').value) {
-      const today = new Date();
-      const weekAgo = new Date(today); weekAgo.setDate(weekAgo.getDate() - 6);
-      document.getElementById('date-from').value = weekAgo.toISOString().slice(0, 10);
-      document.getElementById('date-to').value   = today.toISOString().slice(0, 10);
+      const _now = new Date();
+      function _fmtLocal(d) {
+        const y = d.getFullYear();
+        const mo = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        return y + '-' + mo + '-' + dd;
+      }
+      const _todayLocal = new Date(_now.getFullYear(), _now.getMonth(), _now.getDate());
+      const _weekAgo = new Date(_todayLocal); _weekAgo.setDate(_weekAgo.getDate() - 6);
+      document.getElementById('date-from').value = _fmtLocal(_weekAgo);
+      document.getElementById('date-to').value   = _fmtLocal(_todayLocal);
     }
   }
   applySource();
