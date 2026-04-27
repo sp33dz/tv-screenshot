@@ -45,7 +45,8 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add gallery/data.json gallery/data.json.bak || true
+          git add gallery/data.json
+          git add gallery/data.json.bak 2>/dev/null || true
           git diff --staged --quiet || \
             git commit -m "chore: rebuild data.json from sidecar files [skip ci]"
           git push
