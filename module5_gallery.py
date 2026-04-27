@@ -573,18 +573,31 @@ class GalleryManager:
     # ------------------------------------------------------------------
 
     def _write_data_json(self, index: GalleryIndex) -> bool:
-        """Write gallery/data.json. Returns True on success."""
+        """Write gallery/data.json atomically (temp → rename). Returns True on success.
+
+        Atomic write prevents data.json corruption when a process is killed
+        mid-write (e.g. GitHub Actions timeout, server restart at night).
+        A corrupted data.json causes _merge_historical() to fail silently on
+        the next run, resetting the gallery to only the current scan's entries.
+        """
         out = self.gallery_folder / DATA_FILE
+        tmp = out.with_suffix(".json.tmp")
         try:
             self.gallery_folder.mkdir(parents=True, exist_ok=True)
-            out.write_text(
-                json.dumps(index.to_dict(), ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-            logger.debug("data.json written → %s", out)
+            payload = json.dumps(index.to_dict(), ensure_ascii=False, indent=2)
+            # Write to temp file first, then atomically replace
+            tmp.write_text(payload, encoding="utf-8")
+            tmp.replace(out)  # atomic on POSIX; near-atomic on Windows (py3.3+)
+            logger.debug("data.json written atomically → %s", out)
             return True
         except Exception as exc:
             logger.error("Failed to write data.json: %s", exc)
+            # Clean up temp file if it exists
+            try:
+                if tmp.exists():
+                    tmp.unlink()
+            except OSError:
+                pass
             return False
 
     def _merge_historical(self, current_index: GalleryIndex) -> GalleryIndex:
@@ -607,24 +620,54 @@ class GalleryManager:
           longer exist as local PNG files).
         - Metadata sets (symbols, markets, months, tags, drives) are rebuilt
           from the merged entry list.
+        - A backup copy (data.json.bak) is written after every successful
+          merge so that a corrupt data.json can be auto-recovered.
 
         Returns
         -------
         A new GalleryIndex with the merged result.
         """
         data_path = self.gallery_folder / DATA_FILE
-        if not data_path.exists():
-            # No history yet — nothing to merge
-            return current_index
+        backup_path = self.gallery_folder / (DATA_FILE + ".bak")
 
-        try:
-            raw = json.loads(data_path.read_text(encoding="utf-8"))
-            historical_entries_raw: list = raw.get("entries", [])
-        except Exception as exc:
-            logger.warning("_merge_historical: could not read existing data.json (%s) — skipping merge", exc)
-            return current_index
+        # ── Try to load historical data — fall back to backup if corrupt ──
+        historical_entries_raw: list = []
+        loaded_from_backup = False
+
+        for candidate in (data_path, backup_path):
+            if not candidate.exists():
+                continue
+            try:
+                text = candidate.read_text(encoding="utf-8")
+                if not text.strip():
+                    logger.warning("_merge_historical: %s is empty — skipping", candidate.name)
+                    continue
+                raw = json.loads(text)
+                entries_raw = raw.get("entries", [])
+                if not isinstance(entries_raw, list):
+                    logger.warning("_merge_historical: 'entries' in %s is not a list — skipping", candidate.name)
+                    continue
+                historical_entries_raw = entries_raw
+                if candidate == backup_path:
+                    loaded_from_backup = True
+                    logger.warning(
+                        "_merge_historical: data.json was corrupt/empty — restored from backup (%d entries)",
+                        len(historical_entries_raw),
+                    )
+                break
+            except json.JSONDecodeError as exc:
+                logger.warning(
+                    "_merge_historical: %s has invalid JSON (%s) — trying backup",
+                    candidate.name, exc,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "_merge_historical: could not read %s (%s) — trying backup",
+                    candidate.name, exc,
+                )
 
         if not historical_entries_raw:
+            # No usable history at all — nothing to merge
             return current_index
 
         # Build lookup of current-scan entries by path (highest priority)
@@ -697,7 +740,7 @@ class GalleryManager:
             ),
         )
 
-        return GalleryIndex(
+        merged_index = GalleryIndex(
             entries=merged_entries,
             symbols=sorted(symbols),
             markets=sorted(markets),
@@ -707,6 +750,23 @@ class GalleryManager:
             total_files=len(merged_entries),
             generated_at=datetime.utcnow().isoformat(timespec="seconds"),
         )
+
+        # ── Write backup after successful merge ──────────────────────────
+        # This ensures we always have a clean fallback if data.json gets
+        # corrupted on the next write (e.g. process killed mid-write).
+        # Only write backup if we did NOT load from backup (to avoid
+        # overwriting a good backup with a potentially smaller dataset).
+        if not loaded_from_backup:
+            try:
+                backup_path.write_text(
+                    json.dumps(merged_index.to_dict(), ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+                logger.debug("data.json.bak updated → %s", backup_path)
+            except Exception as exc:
+                logger.warning("_merge_historical: failed to write backup: %s", exc)
+
+        return merged_index
 
     # ------------------------------------------------------------------
     # Internal — notes.json
@@ -723,13 +783,18 @@ class GalleryManager:
 
     def _save_notes(self, notes: dict) -> None:
         notes_path = self.gallery_folder / NOTES_FILE
+        tmp_path = notes_path.with_suffix(".json.tmp")
         try:
-            notes_path.write_text(
-                json.dumps(notes, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
+            payload = json.dumps(notes, ensure_ascii=False, indent=2)
+            tmp_path.write_text(payload, encoding="utf-8")
+            tmp_path.replace(notes_path)  # atomic replace
         except Exception as exc:
             logger.error("notes.json save failed: %s", exc)
+            try:
+                if tmp_path.exists():
+                    tmp_path.unlink()
+            except OSError:
+                pass
 
     # ------------------------------------------------------------------
     # Internal — HTML generation
