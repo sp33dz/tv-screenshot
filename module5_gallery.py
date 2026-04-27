@@ -7,7 +7,7 @@ Features:
 - Chart Replay: Play / Pause / Speed control (0.5x – 16x)
 - Step ← → ทีละภาพ
 - Jump to date
-- Filter by Symbol / Market / Drive / Session tag
+- Filter by Symbol / Market / Drive / Session tag + Date range (quick presets + custom)
 - Drive filter dropdown (Drive1…DriveN)
 - Note / Annotation บนภาพ (saved to JSON sidecar)
 - Mark trade feature (Bull / Bear / Note)
@@ -914,18 +914,24 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 #count { font-size: 12px; color: var(--muted); white-space: nowrap; }
 #grid {
   flex: 1; overflow-y: auto; padding: 16px;
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px; align-content: start;
 }
 .card {
-  background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
-  overflow: hidden; cursor: pointer; transition: border-color 0.15s, transform 0.1s; position: relative;
+  background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px;
+  overflow: hidden; cursor: pointer; transition: all 0.15s; position: relative;
+  display: flex; flex-direction: column;
 }
-.card:hover { border-color: var(--accent); transform: translateY(-1px); }
-.card.pinned { border-color: var(--pin); }
-.card img { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; background: #000; }
-.card-info { padding: 8px 10px; }
-.card-symbol { font-weight: 600; font-size: 13px; }
-.card-date { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.card:hover { border-color: var(--accent); transform: translateY(-2px); }
+.card img {
+  width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block;
+  background: #0a0f14;
+}
+.card-info {
+  padding: 10px 10px 12px; background: var(--card-bg); flex-shrink: 0;
+}
+.card-symbol { font-weight: 600; font-size: 13px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.card-date { font-size: 11px; color: var(--muted); margin-top: 4px; white-space: nowrap; overflow-x: hidden; text-overflow: ellipsis; }
 .badge { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 4px; font-weight: 600; margin-left: 6px; vertical-align: middle; }
 .badge-tag { background: #1f3d2e; color: var(--accent); }
 .badge-pin { background: #2d1f5e; color: var(--pin); }
@@ -1195,7 +1201,8 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
   <div id="lb-toolbar">
 
     <!-- Draw tools -->
-    <button class="tool-btn active" id="tool-pen"       onclick="setTool('pen')"       data-tip="✏️ Pen — free draw (P)">✏️ <span class="tb-label">Pen</span></button>
+    <button class="tool-btn active" id="tool-pan"  onclick="setTool('pan')" data-tip="✋ Pan / Move image (Space+drag)">✋ <span class="tb-label">Pan</span></button>
+    <button class="tool-btn"        id="tool-pen"  onclick="setTool('pen')" data-tip="✏️ Pen — free draw (P)">✏️ <span class="tb-label">Pen</span></button>
     <button class="tool-btn"        id="tool-line"      onclick="setTool('line')"      data-tip="📏 Straight Line (L)">📏 <span class="tb-label">Line</span></button>
     <button class="tool-btn"        id="tool-arrow"     onclick="setTool('arrow')"     data-tip="➡️ Arrow (A)">➡️ <span class="tb-label">Arrow</span></button>
     <button class="tool-btn"        id="tool-rect"      onclick="setTool('rect')"      data-tip="▭ Rectangle (R)">▭ <span class="tb-label">Rect</span></button>
@@ -1208,7 +1215,7 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
     <div class="tb-sep"></div>
 
     <!-- Pan / Zoom -->
-    <button class="tool-btn" id="tool-pan"  onclick="setTool('pan')" data-tip="✋ Pan / Move image (Space+drag)">✋ <span class="tb-label">Pan</span></button>
+    <button class="tool-btn" id="tool-pan2"  onclick="setTool('pan')" data-tip="✋ Pan / Move image (Space+drag)">✋ <span class="tb-label">Pan</span></button>
     <button class="tool-btn" onclick="zoomIn()"  data-tip="🔍 Zoom In (+)">🔍+</button>
     <button class="tool-btn" onclick="zoomOut()" data-tip="🔎 Zoom Out (-)">🔎−</button>
     <button class="tool-btn" onclick="zoomFit()" data-tip="⊡ Fit to screen (F)">⊡ <span class="tb-label">Fit</span></button>
@@ -1313,7 +1320,7 @@ const _GITHUB_PAGES_URL = '%%GITHUB_PAGES_URL%%';  // "" = disabled
 /* ═══════════════════════════════════════════════
    Annotation / drawing state
 ═══════════════════════════════════════════════ */
-let currentTool   = 'pen';
+let currentTool   = 'pan';    // default ปากกาเปลี่ยนเป็น pan
 let drawColor     = '#ff4444';
 let strokeSize    = 3;
 let drawOpacity   = 1.0;
@@ -1815,7 +1822,7 @@ async function saveAnnotation() {
 }
 
 /* ═══════════════════════════════════════════════
-   Gallery data + filters (unchanged from original)
+   Gallery data + filters 
 ═══════════════════════════════════════════════ */
 function absPath(rel, entry) {
   // Priority: 1) Google Drive public URL (must be non-empty string)
@@ -2036,7 +2043,7 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
   padding: 10px 16px; display: flex; align-items: center; gap: 10px; flex-shrink: 0; flex-wrap: wrap;
 }
 #header h1 { font-size: 14px; color: var(--accent); margin-right: 8px; white-space: nowrap; }
-select, input[type=date] {
+select, input[type=date], input[type=text] {
   background: var(--bg); border: 1px solid var(--border); color: var(--text);
   padding: 6px 8px; border-radius: 6px; font-size: 13px;
 }
@@ -2284,8 +2291,26 @@ body.theatre #viewport:hover #play-hud  { opacity: 1; }
     <option value="">All Tags</option>
   </select>
 
-  <input type="date" id="jump-date" title="Jump to date"/>
-  <button class="btn btn-outline" onclick="jumpToDate()">Jump</button>
+  <!-- Date range filter -->
+  <select id="date-quick" onchange="onQuickDate()">
+    <option value="">-- ช่วงเวลาด่วน --</option>
+    <option value="today">วันนี้</option>
+    <option value="yesterday">เมื่อวาน</option>
+    <option value="3d">3 วันที่ผ่านมา</option>
+    <option value="5d">5 วันที่ผ่านมา</option>
+    <option value="1w">1 สัปดาห์</option>
+    <option value="2w">2 สัปดาห์</option>
+    <option value="3w">3 สัปดาห์</option>
+    <option value="1m">1 เดือน</option>
+    <option value="2m">2 เดือน</option>
+    <option value="3m">3 เดือน</option>
+    <option value="6m">6 เดือน</option>
+    <option value="1y">1 ปี</option>
+    <option value="all">ทั้งหมด</option>
+  </select>
+  <input type="date" id="date-from" onchange="applySource()" placeholder="เริ่มต้น"/>
+  <input type="date" id="date-to"   onchange="applySource()" placeholder="สิ้นสุด"/>
+  <button class="btn btn-outline" onclick="clearDateRange()">ล้างช่วงวันที่</button>
 
   <button id="btn-theatre"   onclick="toggleTheatre()" title="Theatre mode [T]">⬛ Theatre</button>
   <button id="btn-fullscreen" onclick="toggleFullscreen()" title="Fullscreen [F]">⛶</button>
@@ -2872,7 +2897,49 @@ function fillDrives(drives) {
   });
 }
 
-// ── Source / filters ──────────────────────────────────────────────
+// ── Source / filters + DATE RANGE ─────────────────────────────────
+// helpers for date range quick select
+function getDateNDaysAgo(days) {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.toISOString().slice(0,10);
+}
+function getDateNMonthsAgo(months) {
+  const d = new Date();
+  d.setMonth(d.getMonth() - months);
+  return d.toISOString().slice(0,10);
+}
+function onQuickDate() {
+  const val = document.getElementById('date-quick').value;
+  let from = null, to = null;
+  const today = new Date().toISOString().slice(0,10);
+  if (val === 'today')      { from = today; to = today; }
+  else if (val === 'yesterday') {
+    const yest = new Date(); yest.setDate(yest.getDate()-1);
+    from = to = yest.toISOString().slice(0,10);
+  }
+  else if (val === '3d')    { from = getDateNDaysAgo(2); to = today; }
+  else if (val === '5d')    { from = getDateNDaysAgo(4); to = today; }
+  else if (val === '1w')    { from = getDateNDaysAgo(6); to = today; }
+  else if (val === '2w')    { from = getDateNDaysAgo(13); to = today; }
+  else if (val === '3w')    { from = getDateNDaysAgo(20); to = today; }
+  else if (val === '1m')    { from = getDateNMonthsAgo(1); to = today; }
+  else if (val === '2m')    { from = getDateNMonthsAgo(2); to = today; }
+  else if (val === '3m')    { from = getDateNMonthsAgo(3); to = today; }
+  else if (val === '6m')    { from = getDateNMonthsAgo(6); to = today; }
+  else if (val === '1y')    { from = getDateNMonthsAgo(12); to = today; }
+  else if (val === 'all')   { from = null; to = null; }
+  document.getElementById('date-from').value = from || '';
+  document.getElementById('date-to').value   = to   || '';
+  applySource();
+}
+function clearDateRange() {
+  document.getElementById('date-quick').value = '';
+  document.getElementById('date-from').value = '';
+  document.getElementById('date-to').value = '';
+  applySource();
+}
+
 function onSymbolChange() { applySource(); }
 
 function applySource() {
@@ -2880,6 +2947,8 @@ function applySource() {
   const mkt = document.getElementById('sel-market').value;
   const drv = document.getElementById('sel-drive').value;
   const tag = document.getElementById('sel-tag').value;
+  const dateFrom = document.getElementById('date-from').value;
+  const dateTo   = document.getElementById('date-to').value;
 
   clearTimeout(timer);
   playing = false;
@@ -2892,12 +2961,16 @@ function applySource() {
     return;
   }
 
-  source = ALL.filter(e =>
-    e.symbol === sym &&
-    (!mkt || e.market === mkt) &&
-    (!drv || e.drive_name === drv) &&
-    (!tag || e.tag === tag)
-  ).sort((a, b) => (a.sort_key || '').localeCompare(b.sort_key || ''));
+  source = ALL.filter(e => {
+    if (e.symbol !== sym) return false;
+    if (mkt && e.market !== mkt) return false;
+    if (drv && e.drive_name !== drv) return false;
+    if (tag && e.tag !== tag) return false;
+    // date range filtering
+    if (dateFrom && e.date < dateFrom) return false;
+    if (dateTo   && e.date > dateTo)   return false;
+    return true;
+  }).sort((a, b) => (a.sort_key || '').localeCompare(b.sort_key || ''));
 
   idx = 0;
   imgCache.clear();
