@@ -1,52 +1,10 @@
-# =============================================================================
-# SNIPPET: เพิ่ม step นี้เข้าใน GitHub Actions workflow ที่มีอยู่แล้ว
-# วาง step นี้ไว้ "ก่อน" step ที่รัน GalleryManager.build()
-# =============================================================================
-#
-# ตัวอย่างตำแหน่งใน workflow:
-#
-#   jobs:
-#     build:
-#       steps:
-#         - uses: actions/checkout@v4
-#         - uses: actions/setup-python@v5
-#           with:
-#             python-version: "3.11"
-#         - name: Install dependencies
-#           run: pip install -r requirements.txt
-#
-#         # ▼▼▼ วาง step นี้ที่นี่ ▼▼▼
-#         - name: Rebuild data.json from sidecar files
-#           ...
-#         # ▲▲▲
-#
-#         - name: Run main gallery build
-#           run: python -m your_main_module   # ← ส่วนที่เรียก GalleryManager.build()
-
-      - name: Rebuild data.json from sidecar files
-        # สร้าง data.json ใหม่จาก .driveurl/.drive sidecar files
-        # ทำงานได้แม้ PNG ไม่มีใน runner — ใช้แทน build() เมื่อ data.json หาย/เสีย
-        run: python rebuild_data_json.py
-        env:
-          # ไม่จำเป็นต้องมี แต่ถ้า build step ถัดไปใช้ password ก็ส่งไปด้วย
-          GALLERY_PASSWORD: ${{ secrets.GALLERY_PASSWORD }}
-
-# =============================================================================
-# FULL WORKFLOW EXAMPLE (ถ้าต้องการ workflow ใหม่ทั้งไฟล์)
-# บันทึกเป็น .github/workflows/rebuild-gallery.yml
-# =============================================================================
-
 name: Rebuild Gallery Data
 
 on:
-  # รันเมื่อ push sidecar files ขึ้น repo
   push:
     paths:
       - "screenshots/**/*.driveurl"
       - "screenshots/**/*.drive"
-      - "gallery/data.json"
-
-  # รันได้ manual จาก Actions tab (เผื่อ data.json หายหรือเสีย)
   workflow_dispatch:
     inputs:
       dry_run:
@@ -54,40 +12,24 @@ on:
         type: boolean
         default: false
 
-  # Optional: รันตามเวลา เช่น ทุกวันเวลา 01:00 UTC
-  # schedule:
-  #   - cron: "0 1 * * *"
-
 jobs:
   rebuild:
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # ต้องการสิทธิ์ push data.json กลับขึ้น repo
+      contents: write
 
     steps:
-      # ── 1. Checkout ──────────────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # fetch-depth: 1 เพียงพอ — ไม่ต้องการ git history
           fetch-depth: 1
 
-      # ── 2. Setup Python ──────────────────────────────────────────────────
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
 
-      # ── 3. Install dependencies ──────────────────────────────────────────
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          # rebuild_data_json.py ใช้แค่ stdlib ไม่ต้องติดตั้งอะไรเพิ่ม
-          # ถ้า requirements.txt มีอยู่แล้ว:
-          # pip install -r requirements.txt
-
-      # ── 4. Rebuild data.json ─────────────────────────────────────────────
       - name: Rebuild data.json from sidecar files
         run: |
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
@@ -98,26 +40,12 @@ jobs:
         env:
           GALLERY_PASSWORD: ${{ secrets.GALLERY_PASSWORD }}
 
-      # ── 5. (Optional) Run full gallery build ─────────────────────────────
-      # ถ้า workflow ของคุณรัน GalleryManager.build() ด้วย ให้เพิ่ม step นี้:
-      # - name: Generate HTML gallery
-      #   run: python -c "
-      #     from module5_gallery import create_gallery_manager
-      #     gm = create_gallery_manager()
-      #     gm.build()
-      #   "
-      #   env:
-      #     GALLERY_PASSWORD: ${{ secrets.GALLERY_PASSWORD }}
-
-      # ── 6. Commit data.json กลับขึ้น repo ──────────────────────────────
       - name: Commit rebuilt data.json
-        # ข้ามถ้า dry-run หรือไม่มีการเปลี่ยนแปลง
         if: ${{ github.event.inputs.dry_run != 'true' }}
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add gallery/data.json gallery/data.json.bak || true
-          # ถ้าไม่มีการเปลี่ยนแปลง git commit จะ fail → ใช้ || true
           git diff --staged --quiet || \
             git commit -m "chore: rebuild data.json from sidecar files [skip ci]"
           git push
