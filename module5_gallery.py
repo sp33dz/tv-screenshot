@@ -902,6 +902,24 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 .mark-bar.BEAR { background: var(--bear); }
 .mark-bar.NOTE { background: var(--note); }
 #empty { display: none; text-align: center; color: var(--muted); padding: 60px 20px; grid-column: 1/-1; font-size: 14px; }
+
+/* ── Pagination bar ── */
+#pagination {
+  padding: 12px 16px; background: var(--panel); border-top: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  flex-shrink: 0; flex-wrap: wrap;
+}
+#pagination.hidden { display: none; }
+.pg-btn {
+  background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  padding: 5px 11px; border-radius: 6px; font-size: 13px; cursor: pointer;
+  transition: background 0.12s, border-color 0.12s; min-width: 34px; text-align: center;
+}
+.pg-btn:hover { background: #21262d; border-color: var(--accent); }
+.pg-btn.active { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 700; }
+.pg-btn:disabled { opacity: 0.35; cursor: default; }
+#pg-info { font-size: 12px; color: var(--muted); margin: 0 8px; white-space: nowrap; }
+#pg-size-sel { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 5px 7px; border-radius: 6px; font-size: 12px; }
 ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: var(--bg); } ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
 /* ══════════════════════════════════════════════════
@@ -1140,6 +1158,20 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
   <div id="grid">
     <div id="empty">No screenshots found matching the current filters.</div>
   </div>
+  <div id="pagination" class="hidden">
+    <button class="pg-btn" id="pg-first"  onclick="goPage(1)"        title="First page">«</button>
+    <button class="pg-btn" id="pg-prev"   onclick="goPage(curPage-1)" title="Previous">‹</button>
+    <span id="pg-info">—</span>
+    <span id="pg-numbers"></span>
+    <button class="pg-btn" id="pg-next"   onclick="goPage(curPage+1)" title="Next">›</button>
+    <button class="pg-btn" id="pg-last"   onclick="goPage(totalPages)" title="Last page">»</button>
+    <select id="pg-size-sel" onchange="onPageSizeChange()" title="Images per page">
+      <option value="20">20 / page</option>
+      <option value="40" selected>40 / page</option>
+      <option value="60">60 / page</option>
+      <option value="100">100 / page</option>
+    </select>
+  </div>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════
@@ -1269,6 +1301,11 @@ let ALL = [];
 let FILTERED = [];
 let NOTES = {};
 let lbIdx = 0;
+
+/* ── Pagination state ── */
+let curPage   = 1;
+let pageSize  = 40;   // default 40 per page
+let totalPages = 1;
 
 const _INLINE_DATA      = %%INLINE_DATA%%;
 const _INLINE_NOTES     = %%INLINE_NOTES%%;
@@ -1668,7 +1705,12 @@ function exportAnnotated() {
    Keyboard shortcuts
 ═══════════════════════════════════════════════ */
 document.addEventListener('keydown', e => {
+  // Pagination keyboard shortcuts (when lightbox is closed)
   const lb = document.getElementById('lightbox');
+  if (!lb.classList.contains('open')) {
+    if (e.key === 'PageDown' && !e.ctrlKey) { e.preventDefault(); goPage(curPage + 1); return; }
+    if (e.key === 'PageUp'  && !e.ctrlKey) { e.preventDefault(); goPage(curPage - 1); return; }
+  }
   if (!lb.classList.contains('open')) return;
   if (document.getElementById('text-input-overlay').style.display === 'block') return;
   if (document.activeElement === document.getElementById('lb-note-input')) return;
@@ -1864,6 +1906,7 @@ function updateStats(data) {
      <a href="replay.html" style="color:var(--accent);font-size:12px;">Open Replay →</a>`;
 }
 function applyFilters() {
+  curPage = 1;  // reset to page 1 on any filter change
   const sym   = document.getElementById('f-symbol').value;
   const mkt   = document.getElementById('f-market').value;
   const mon   = document.getElementById('f-month').value;
@@ -1897,28 +1940,111 @@ function clearFilters() {
   document.getElementById('search').value = '';
   applyFilters();
 }
+/* ── Pagination helpers ── */
+function goPage(p) {
+  curPage = Math.max(1, Math.min(totalPages, p));
+  renderGrid();
+  // Scroll grid back to top after page change
+  const grid = document.getElementById('grid');
+  grid.scrollTop = 0;
+}
+
+function onPageSizeChange() {
+  pageSize = parseInt(document.getElementById('pg-size-sel').value, 10);
+  curPage  = 1;
+  renderGrid();
+}
+
+function renderPagination() {
+  const bar   = document.getElementById('pagination');
+  const info  = document.getElementById('pg-info');
+  const nums  = document.getElementById('pg-numbers');
+  const btnF  = document.getElementById('pg-first');
+  const btnPr = document.getElementById('pg-prev');
+  const btnNx = document.getElementById('pg-next');
+  const btnL  = document.getElementById('pg-last');
+
+  if (totalPages <= 1) {
+    bar.classList.add('hidden');
+    return;
+  }
+  bar.classList.remove('hidden');
+
+  const start = (curPage - 1) * pageSize + 1;
+  const end   = Math.min(curPage * pageSize, FILTERED.length);
+  info.textContent = `${start}–${end} of ${FILTERED.length}`;
+
+  // Prev / Next / First / Last disabled state
+  btnF.disabled  = curPage === 1;
+  btnPr.disabled = curPage === 1;
+  btnNx.disabled = curPage === totalPages;
+  btnL.disabled  = curPage === totalPages;
+
+  // Page number buttons — show window of 7 around curPage
+  nums.innerHTML = '';
+  const W = 3; // pages to show each side of current
+  let lo = Math.max(1, curPage - W);
+  let hi = Math.min(totalPages, curPage + W);
+  // Expand window if near edges
+  if (curPage - lo < W) hi = Math.min(totalPages, lo + W * 2);
+  if (hi - curPage < W) lo = Math.max(1, hi - W * 2);
+
+  function addBtn(label, page, isActive, isEllipsis) {
+    const b = document.createElement('button');
+    b.className = 'pg-btn' + (isActive ? ' active' : '');
+    b.textContent = label;
+    if (!isEllipsis) {
+      b.onclick = () => goPage(page);
+    } else {
+      b.disabled = true;
+      b.style.cursor = 'default';
+    }
+    nums.appendChild(b);
+  }
+
+  if (lo > 1)            { addBtn('1', 1, false, false); if (lo > 2) addBtn('…', 0, false, true); }
+  for (let p = lo; p <= hi; p++) addBtn(String(p), p, p === curPage, false);
+  if (hi < totalPages)   { if (hi < totalPages - 1) addBtn('…', 0, false, true); addBtn(String(totalPages), totalPages, false, false); }
+}
+
 function renderGrid() {
   const grid  = document.getElementById('grid');
   const empty = document.getElementById('empty');
+
+  // Compute pagination
+  totalPages = Math.max(1, Math.ceil(FILTERED.length / pageSize));
+  if (curPage > totalPages) curPage = totalPages;
+
   document.getElementById('count').textContent = `${FILTERED.length} of ${ALL.length} images`;
+
   // Remove old cards but keep #empty placeholder
   Array.from(grid.children).forEach(c => { if (c !== empty) c.remove(); });
-  if (!FILTERED.length) { empty.style.display = 'block'; return; }
+
+  if (!FILTERED.length) {
+    empty.style.display = 'block';
+    document.getElementById('pagination').classList.add('hidden');
+    return;
+  }
   empty.style.display = 'none';
 
+  // Slice current page
+  const pageStart = (curPage - 1) * pageSize;
+  const pageEnd   = Math.min(pageStart + pageSize, FILTERED.length);
+  const pageItems = FILTERED.slice(pageStart, pageEnd);
+
   const frag = document.createDocumentFragment();
-  FILTERED.forEach((e, i) => {
+  pageItems.forEach((e, localIdx) => {
+    const globalIdx = pageStart + localIdx;   // real index in FILTERED (for lightbox)
     const n    = NOTES[e.path];
-    const mark = n?.trade_mark || '';
+    const mark = n ? (n.trade_mark || '') : '';
     const imgUrl = absPath(e.path, e);
     const card = document.createElement('div');
     card.className = 'card' + (e.is_pinned ? ' pinned' : '');
-    // Store index as data attribute for event delegation
-    card.dataset.idx = String(i);
+    card.dataset.idx = String(globalIdx);
     card.innerHTML = `
-      ${mark ? `<div class="mark-bar ${mark}"></div>` : ''}
-      <div class="card-thumb" id="ct-${i}">
-        <img data-src="${imgUrl}" alt="${e.symbol}"
+      ${mark ? '<div class="mark-bar ' + mark + '"></div>' : ''}
+      <div class="card-thumb">
+        <img src="${imgUrl}" alt="${e.symbol}"
              onload="this.classList.add('loaded');this.parentElement.classList.add('img-loaded')"
              onerror="this.parentElement.classList.add('img-error')"/>
         <div class="thumb-err">🖼️</div>
@@ -1927,17 +2053,17 @@ function renderGrid() {
         <div class="card-symbol">
           ${e.symbol}
           ${e.is_pinned ? '<span class="badge badge-pin">📌 PIN</span>' : ''}
-          ${e.tag  ? `<span class="badge badge-tag">${e.tag}</span>` : ''}
-          ${mark   ? `<span class="badge badge-${mark.toLowerCase()}">${mark}</span>` : ''}
+          ${e.tag  ? '<span class="badge badge-tag">' + e.tag + '</span>' : ''}
+          ${mark   ? '<span class="badge badge-' + mark.toLowerCase() + '">' + mark + '</span>' : ''}
         </div>
-        <div class="card-date">${e.date} ${e.time.replace('-',':')} · ${e.market}${e.drive_name ? ' · '+e.drive_name : ''}</div>
-        ${n?.note ? `<div style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${n.note}</div>` : ''}
+        <div class="card-date">${e.date} ${e.time.replace('-',':')} \u00b7 ${e.market}${e.drive_name ? ' \u00b7 ' + e.drive_name : ''}</div>
+        ${(n && n.note) ? '<div style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + n.note + '</div>' : ''}
       </div>`;
     frag.appendChild(card);
   });
   grid.appendChild(frag);
 
-  // Event delegation: one listener on the grid handles all card clicks
+  // Event delegation — click opens lightbox with FILTERED global index
   grid.onclick = function(ev) {
     const card = ev.target.closest('.card[data-idx]');
     if (!card) return;
@@ -1945,32 +2071,7 @@ function renderGrid() {
     if (!isNaN(i)) openLightbox(i);
   };
 
-  // Lazy-load images via IntersectionObserver (600px look-ahead)
-  // Falls back to immediate load on old browsers
-  const imgs = grid.querySelectorAll('img[data-src]');
-  if (typeof IntersectionObserver !== 'undefined') {
-    const io = new IntersectionObserver(function(entries, obs) {
-      entries.forEach(function(entry) {
-        if (!entry.isIntersecting) return;
-        const img = entry.target;
-        if (img.dataset.src) { img.src = img.dataset.src; img.removeAttribute('data-src'); }
-        obs.unobserve(img);
-      });
-    }, { rootMargin: '600px 0px', threshold: 0 });
-    // Immediately load images that are already in viewport (no async delay)
-    imgs.forEach(function(img) {
-      const rect = img.getBoundingClientRect();
-      const inVp = rect.top < window.innerHeight + 600 && rect.bottom > -600;
-      if (inVp && img.dataset.src) {
-        img.src = img.dataset.src;
-        img.removeAttribute('data-src');
-      } else {
-        io.observe(img);
-      }
-    });
-  } else {
-    imgs.forEach(function(img) { img.src = img.dataset.src; img.removeAttribute('data-src'); });
-  }
+  renderPagination();
 }
 function openReplay() { window.open('replay.html', '_blank'); }
 
