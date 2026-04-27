@@ -17341,6 +17341,21 @@
       "datetime_str": "2026-04-27 14:03"
     },
     {
+      "path": "US/ENPH/2026-04/ENPH_2026-04-27_15-05.png",
+      "abs_path": "screenshots/US/ENPH/2026-04/ENPH_2026-04-27_15-05.png",
+      "symbol": "ENPH",
+      "market": "US",
+      "date": "2026-04-27",
+      "time": "15-05",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 400863,
+      "month": "2026-04",
+      "drive_name": "DriveB",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=1H8xDBibPLWWyRim9S5CcY8lIEDC6MV9R&sz=s0-rw-v1",
+      "datetime_str": "2026-04-27 15:05"
+    },
+    {
       "path": "US/GEOS/2026-04/GEOS_2026-04-20_15-13.png",
       "abs_path": "screenshots/US/GEOS/2026-04/GEOS_2026-04-20_15-13.png",
       "symbol": "GEOS",
@@ -35077,6 +35092,6 @@
     "DriveF",
     "DriveG"
   ],
-  "total_files": 2336,
-  "generated_at": "2026-04-27T07:10:54"
+  "total_files": 2337,
+  "generated_at": "2026-04-27T08:05:48"
 }
