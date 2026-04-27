@@ -167,6 +167,8 @@ class TelegramSender:
         drive_name: str = "",
         drive_label: str = "",
         tag: str = "",
+        index: int = 0,
+        total: int = 0,
     ) -> bool:
         """
         Send a screenshot to Telegram with formatted caption.
@@ -180,6 +182,10 @@ class TelegramSender:
         drive_name  : e.g. "Drive2"  (shown in caption)
         drive_label : e.g. "US-A"    (shown in caption brackets)
         tag         : optional event tag e.g. "NY_OPEN" (added to caption)
+        index       : 1-based position of this image in the batch (e.g. 5)
+        total       : total images in the batch (e.g. 10).
+                      When both index > 0 and total > 0, appends "[index/total]"
+                      to the first caption line:  📊 BTCTHB | CRYPTO [5/10]
 
         Returns True on success, False on failure.
         """
@@ -195,6 +201,8 @@ class TelegramSender:
             drive_name=drive_name,
             drive_label=drive_label,
             tag=tag,
+            index=index,
+            total=total,
         )
 
         return self._send_photo_with_retry(image_path, caption)
@@ -266,12 +274,14 @@ class TelegramSender:
         drive_name: str = "",
         drive_label: str = "",
         tag: str = "",
+        index: int = 0,
+        total: int = 0,
     ) -> str:
         """
         Build Telegram caption in the required format.
 
         Format:
-            📊 {SYMBOL} | {MARKET}
+            📊 {SYMBOL} | {MARKET} [index/total]
             🕐 {YYYY-MM-DD HH:MM} ET
             💾 {DriveN} [{LABEL}]
 
@@ -279,6 +289,8 @@ class TelegramSender:
 
         If drive_name is empty, the 💾 line is omitted.
         If tag is set, it's appended to the first line: "📊 AAPL | US [NY_OPEN]"
+        If both index > 0 and total > 0, "[index/total]" is appended to line 1:
+            📊 BTCTHB | CRYPTO [5/10]
         """
         # Convert dt to ET for display
         if dt.tzinfo is None:
@@ -290,9 +302,10 @@ class TelegramSender:
         from datetime import timedelta as _td
         dt_thai = dt_et + _td(hours=0)
 
-        # --- Line 1: symbol + market + optional tag ---
+        # --- Line 1: symbol + market + optional tag + optional batch counter ---
         tag_suffix = f" [{tag}]" if tag else ""
-        line1 = f"📊 {symbol} | {market}{tag_suffix}"
+        seq_suffix = f" [{index}/{total}]" if (index > 0 and total > 0) else ""
+        line1 = f"📊 {symbol} | {market}{tag_suffix}{seq_suffix}"
 
         # --- Line 2: Thai time (ET+7) ---
         ts_thai = dt_thai.strftime("%Y-%m-%d %H:%M")
@@ -445,12 +458,20 @@ def send_screenshot_to_telegram(
     drive_name: str = "",
     drive_label: str = "",
     tag: str = "",
+    index: int = 0,
+    total: int = 0,
 ) -> bool:
     """
     Thin wrapper: send screenshot if sender is not None.
 
     Returns True on success or if sender is None (Telegram disabled).
     Used as post-capture hook in module1_core.
+
+    Parameters
+    ----------
+    index : 1-based position of this image in the batch (e.g. 5)
+    total : total images in the batch (e.g. 10).
+            When both > 0, caption line 1 becomes:  📊 BTCTHB | CRYPTO [5/10]
     """
     if sender is None:
         return True  # Telegram disabled — not an error
@@ -464,6 +485,8 @@ def send_screenshot_to_telegram(
             drive_name=drive_name,
             drive_label=drive_label,
             tag=tag,
+            index=index,
+            total=total,
         )
     except Exception as exc:
         logger.error("send_screenshot_to_telegram error: %s", exc, exc_info=True)
@@ -531,6 +554,38 @@ def _run_self_test() -> None:
     check("Emoji 🕐 present",         "🕐" in caption)
     check("Emoji 💾 present",         "💾" in caption)
     check("Caption fits in 1024 bytes", len(caption.encode("utf-8")) <= MAX_CAPTION_BYTES)
+    check("No seq suffix when index=0", "[0/" not in caption and "/0]" not in caption)
+
+    # ── Batch counter [index/total] ──────────────────────────────────
+    print("\n--- Batch counter [index/total] ---")
+    caption_seq = TelegramSender._build_caption(
+        symbol="BTCTHB",
+        market="CRYPTO",
+        dt=dt_et,
+        drive_name="DriveA",
+        drive_label="CRYPTO",
+        index=5,
+        total=10,
+    )
+    print("  Caption:\n" + "\n".join("    " + l for l in caption_seq.split("\n")))
+    check("[5/10] appears in caption",      "[5/10]" in caption_seq)
+    check("[5/10] on first line",           caption_seq.split("\n")[0].endswith("[5/10]"))
+    check("Caption fits in 1024 bytes (seq)", len(caption_seq.encode("utf-8")) <= MAX_CAPTION_BYTES)
+
+    caption_seq1 = TelegramSender._build_caption(
+        symbol="BTCTHB", market="CRYPTO", dt=dt_et, index=1, total=1,
+    )
+    check("[1/1] works (single image)",     "[1/1]" in caption_seq1)
+
+    caption_no_seq = TelegramSender._build_caption(
+        symbol="BTCTHB", market="CRYPTO", dt=dt_et, index=0, total=10,
+    )
+    check("No suffix when index=0",         "[0/10]" not in caption_no_seq)
+
+    caption_no_seq2 = TelegramSender._build_caption(
+        symbol="BTCTHB", market="CRYPTO", dt=dt_et, index=5, total=0,
+    )
+    check("No suffix when total=0",         "[5/0]" not in caption_no_seq2)
 
     # ── No drive ─────────────────────────────────────────────────────
     print("\n--- Caption without drive ---")
