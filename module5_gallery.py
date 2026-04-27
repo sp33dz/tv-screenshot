@@ -860,17 +860,17 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 .card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 4px 20px rgba(0,200,150,0.12); }
 .card.pinned { border-color: var(--pin); }
 .card-thumb {
-  position: relative; width: 100%; padding-bottom: 56.25%;
+  position: relative; width: 100%; padding-bottom: 56.25%; min-height: 60px;
   background: #1c2128; overflow: hidden; flex-shrink: 0;
 }
 .card-thumb img {
   position: absolute; inset: 0; width: 100%; height: 100%;
   object-fit: cover; display: block;
-  opacity: 0; transition: opacity 0.25s ease;
+  opacity: 0; transition: opacity 0.25s ease; z-index: 2;
 }
 .card-thumb img.loaded { opacity: 1; }
 .card-thumb::before {
-  content: \'\'; position: absolute; inset: 0;
+  content: ""; position: absolute; inset: 0;
   background: linear-gradient(90deg, #1c2128 25%, #252d38 50%, #1c2128 75%);
   background-size: 200% 100%;
   animation: shimmer 1.4s infinite; z-index: 1;
@@ -1945,7 +1945,7 @@ function renderGrid() {
     if (!isNaN(i)) openLightbox(i);
   };
 
-  // Lazy-load images via IntersectionObserver (300px look-ahead)
+  // Lazy-load images via IntersectionObserver (600px look-ahead)
   // Falls back to immediate load on old browsers
   const imgs = grid.querySelectorAll('img[data-src]');
   if (typeof IntersectionObserver !== 'undefined') {
@@ -1956,8 +1956,18 @@ function renderGrid() {
         if (img.dataset.src) { img.src = img.dataset.src; img.removeAttribute('data-src'); }
         obs.unobserve(img);
       });
-    }, { rootMargin: '300px 0px' });
-    imgs.forEach(function(img) { io.observe(img); });
+    }, { rootMargin: '600px 0px', threshold: 0 });
+    // Immediately load images that are already in viewport (no async delay)
+    imgs.forEach(function(img) {
+      const rect = img.getBoundingClientRect();
+      const inVp = rect.top < window.innerHeight + 600 && rect.bottom > -600;
+      if (inVp && img.dataset.src) {
+        img.src = img.dataset.src;
+        img.removeAttribute('data-src');
+      } else {
+        io.observe(img);
+      }
+    });
   } else {
     imgs.forEach(function(img) { img.src = img.dataset.src; img.removeAttribute('data-src'); });
   }
