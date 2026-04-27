@@ -7,7 +7,7 @@ Features:
 - Chart Replay: Play / Pause / Speed control (0.5x – 16x)
 - Step ← → ทีละภาพ
 - Jump to date
-- Filter by Symbol / Market / Drive / Session tag + Date range (quick presets + custom)
+- Filter by Symbol / Market / Drive / Session tag
 - Drive filter dropdown (Drive1…DriveN)
 - Note / Annotation บนภาพ (saved to JSON sidecar)
 - Mark trade feature (Bull / Bear / Note)
@@ -573,31 +573,18 @@ class GalleryManager:
     # ------------------------------------------------------------------
 
     def _write_data_json(self, index: GalleryIndex) -> bool:
-        """Write gallery/data.json atomically (temp → rename). Returns True on success.
-
-        Atomic write prevents data.json corruption when a process is killed
-        mid-write (e.g. GitHub Actions timeout, server restart at night).
-        A corrupted data.json causes _merge_historical() to fail silently on
-        the next run, resetting the gallery to only the current scan's entries.
-        """
+        """Write gallery/data.json. Returns True on success."""
         out = self.gallery_folder / DATA_FILE
-        tmp = out.with_suffix(".json.tmp")
         try:
             self.gallery_folder.mkdir(parents=True, exist_ok=True)
-            payload = json.dumps(index.to_dict(), ensure_ascii=False, indent=2)
-            # Write to temp file first, then atomically replace
-            tmp.write_text(payload, encoding="utf-8")
-            tmp.replace(out)  # atomic on POSIX; near-atomic on Windows (py3.3+)
-            logger.debug("data.json written atomically → %s", out)
+            out.write_text(
+                json.dumps(index.to_dict(), ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            logger.debug("data.json written → %s", out)
             return True
         except Exception as exc:
             logger.error("Failed to write data.json: %s", exc)
-            # Clean up temp file if it exists
-            try:
-                if tmp.exists():
-                    tmp.unlink()
-            except OSError:
-                pass
             return False
 
     def _merge_historical(self, current_index: GalleryIndex) -> GalleryIndex:
@@ -620,54 +607,24 @@ class GalleryManager:
           longer exist as local PNG files).
         - Metadata sets (symbols, markets, months, tags, drives) are rebuilt
           from the merged entry list.
-        - A backup copy (data.json.bak) is written after every successful
-          merge so that a corrupt data.json can be auto-recovered.
 
         Returns
         -------
         A new GalleryIndex with the merged result.
         """
         data_path = self.gallery_folder / DATA_FILE
-        backup_path = self.gallery_folder / (DATA_FILE + ".bak")
+        if not data_path.exists():
+            # No history yet — nothing to merge
+            return current_index
 
-        # ── Try to load historical data — fall back to backup if corrupt ──
-        historical_entries_raw: list = []
-        loaded_from_backup = False
-
-        for candidate in (data_path, backup_path):
-            if not candidate.exists():
-                continue
-            try:
-                text = candidate.read_text(encoding="utf-8")
-                if not text.strip():
-                    logger.warning("_merge_historical: %s is empty — skipping", candidate.name)
-                    continue
-                raw = json.loads(text)
-                entries_raw = raw.get("entries", [])
-                if not isinstance(entries_raw, list):
-                    logger.warning("_merge_historical: 'entries' in %s is not a list — skipping", candidate.name)
-                    continue
-                historical_entries_raw = entries_raw
-                if candidate == backup_path:
-                    loaded_from_backup = True
-                    logger.warning(
-                        "_merge_historical: data.json was corrupt/empty — restored from backup (%d entries)",
-                        len(historical_entries_raw),
-                    )
-                break
-            except json.JSONDecodeError as exc:
-                logger.warning(
-                    "_merge_historical: %s has invalid JSON (%s) — trying backup",
-                    candidate.name, exc,
-                )
-            except Exception as exc:
-                logger.warning(
-                    "_merge_historical: could not read %s (%s) — trying backup",
-                    candidate.name, exc,
-                )
+        try:
+            raw = json.loads(data_path.read_text(encoding="utf-8"))
+            historical_entries_raw: list = raw.get("entries", [])
+        except Exception as exc:
+            logger.warning("_merge_historical: could not read existing data.json (%s) — skipping merge", exc)
+            return current_index
 
         if not historical_entries_raw:
-            # No usable history at all — nothing to merge
             return current_index
 
         # Build lookup of current-scan entries by path (highest priority)
@@ -740,7 +697,7 @@ class GalleryManager:
             ),
         )
 
-        merged_index = GalleryIndex(
+        return GalleryIndex(
             entries=merged_entries,
             symbols=sorted(symbols),
             markets=sorted(markets),
@@ -750,23 +707,6 @@ class GalleryManager:
             total_files=len(merged_entries),
             generated_at=datetime.utcnow().isoformat(timespec="seconds"),
         )
-
-        # ── Write backup after successful merge ──────────────────────────
-        # This ensures we always have a clean fallback if data.json gets
-        # corrupted on the next write (e.g. process killed mid-write).
-        # Only write backup if we did NOT load from backup (to avoid
-        # overwriting a good backup with a potentially smaller dataset).
-        if not loaded_from_backup:
-            try:
-                backup_path.write_text(
-                    json.dumps(merged_index.to_dict(), ensure_ascii=False, indent=2),
-                    encoding="utf-8",
-                )
-                logger.debug("data.json.bak updated → %s", backup_path)
-            except Exception as exc:
-                logger.warning("_merge_historical: failed to write backup: %s", exc)
-
-        return merged_index
 
     # ------------------------------------------------------------------
     # Internal — notes.json
@@ -783,18 +723,13 @@ class GalleryManager:
 
     def _save_notes(self, notes: dict) -> None:
         notes_path = self.gallery_folder / NOTES_FILE
-        tmp_path = notes_path.with_suffix(".json.tmp")
         try:
-            payload = json.dumps(notes, ensure_ascii=False, indent=2)
-            tmp_path.write_text(payload, encoding="utf-8")
-            tmp_path.replace(notes_path)  # atomic replace
+            notes_path.write_text(
+                json.dumps(notes, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
         except Exception as exc:
             logger.error("notes.json save failed: %s", exc)
-            try:
-                if tmp_path.exists():
-                    tmp_path.unlink()
-            except OSError:
-                pass
 
     # ------------------------------------------------------------------
     # Internal — HTML generation
@@ -914,31 +849,55 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 #count { font-size: 12px; color: var(--muted); white-space: nowrap; }
 #grid {
   flex: 1; overflow-y: auto; padding: 16px;
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 16px; align-content: start;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px;
+  align-content: start;
 }
 .card {
   background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px;
-  overflow: hidden; cursor: pointer; transition: all 0.15s; position: relative;
-  display: flex; flex-direction: column;
+  overflow: hidden; cursor: pointer; transition: border-color 0.15s, transform 0.12s, box-shadow 0.15s;
+  position: relative; display: flex; flex-direction: column;
 }
-.card:hover { border-color: var(--accent); transform: translateY(-2px); }
-.card img {
-  width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block;
-  background: #0a0f14;
+.card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 4px 20px rgba(0,200,150,0.12); }
+.card.pinned { border-color: var(--pin); }
+.card-thumb {
+  position: relative; width: 100%; padding-bottom: 56.25%;
+  background: #1c2128; overflow: hidden; flex-shrink: 0;
 }
-.card-info {
-  padding: 10px 10px 12px; background: var(--card-bg); flex-shrink: 0;
+.card-thumb img {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; display: block;
+  opacity: 0; transition: opacity 0.25s ease;
 }
-.card-symbol { font-weight: 600; font-size: 13px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
-.card-date { font-size: 11px; color: var(--muted); margin-top: 4px; white-space: nowrap; overflow-x: hidden; text-overflow: ellipsis; }
-.badge { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 4px; font-weight: 600; margin-left: 6px; vertical-align: middle; }
+.card-thumb img.loaded { opacity: 1; }
+.card-thumb::before {
+  content: \'\'; position: absolute; inset: 0;
+  background: linear-gradient(90deg, #1c2128 25%, #252d38 50%, #1c2128 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite; z-index: 1;
+  transition: opacity 0.3s;
+}
+.card-thumb.img-loaded::before { opacity: 0; pointer-events: none; }
+.card-thumb .thumb-err {
+  position: absolute; inset: 0; display: none;
+  align-items: center; justify-content: center;
+  font-size: 28px; color: var(--muted); z-index: 2;
+}
+.card-thumb.img-error .thumb-err { display: flex; }
+.card-thumb.img-error::before   { opacity: 0; }
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.card-info { padding: 9px 11px; flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.card-symbol { font-weight: 600; font-size: 13px; display: flex; align-items: center; flex-wrap: wrap; gap: 3px; }
+.card-date { font-size: 11px; color: var(--muted); }
+.badge { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 4px; font-weight: 600; vertical-align: middle; }
 .badge-tag { background: #1f3d2e; color: var(--accent); }
 .badge-pin { background: #2d1f5e; color: var(--pin); }
 .badge-bull { background: #1f3d2e; color: var(--bull); }
 .badge-bear { background: #3d1f1f; color: var(--bear); }
 .badge-note { background: #3d331f; color: var(--note); }
-.mark-bar { position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+.mark-bar { position: absolute; top: 0; left: 0; right: 0; height: 3px; z-index: 3; }
 .mark-bar.BULL { background: var(--bull); }
 .mark-bar.BEAR { background: var(--bear); }
 .mark-bar.NOTE { background: var(--note); }
@@ -1201,8 +1160,7 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
   <div id="lb-toolbar">
 
     <!-- Draw tools -->
-    <button class="tool-btn active" id="tool-pan"  onclick="setTool('pan')" data-tip="✋ Pan / Move image (Space+drag)">✋ <span class="tb-label">Pan</span></button>
-    <button class="tool-btn"        id="tool-pen"  onclick="setTool('pen')" data-tip="✏️ Pen — free draw (P)">✏️ <span class="tb-label">Pen</span></button>
+    <button class="tool-btn"        id="tool-pen"       onclick="setTool('pen')"       data-tip="✏️ Pen — free draw (P)">✏️ <span class="tb-label">Pen</span></button>
     <button class="tool-btn"        id="tool-line"      onclick="setTool('line')"      data-tip="📏 Straight Line (L)">📏 <span class="tb-label">Line</span></button>
     <button class="tool-btn"        id="tool-arrow"     onclick="setTool('arrow')"     data-tip="➡️ Arrow (A)">➡️ <span class="tb-label">Arrow</span></button>
     <button class="tool-btn"        id="tool-rect"      onclick="setTool('rect')"      data-tip="▭ Rectangle (R)">▭ <span class="tb-label">Rect</span></button>
@@ -1215,7 +1173,7 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
     <div class="tb-sep"></div>
 
     <!-- Pan / Zoom -->
-    <button class="tool-btn" id="tool-pan2"  onclick="setTool('pan')" data-tip="✋ Pan / Move image (Space+drag)">✋ <span class="tb-label">Pan</span></button>
+    <button class="tool-btn active" id="tool-pan"  onclick="setTool('pan')" data-tip="✋ Pan / Move image (Space+drag)">✋ <span class="tb-label">Pan</span></button>
     <button class="tool-btn" onclick="zoomIn()"  data-tip="🔍 Zoom In (+)">🔍+</button>
     <button class="tool-btn" onclick="zoomOut()" data-tip="🔎 Zoom Out (-)">🔎−</button>
     <button class="tool-btn" onclick="zoomFit()" data-tip="⊡ Fit to screen (F)">⊡ <span class="tb-label">Fit</span></button>
@@ -1320,7 +1278,7 @@ const _GITHUB_PAGES_URL = '%%GITHUB_PAGES_URL%%';  // "" = disabled
 /* ═══════════════════════════════════════════════
    Annotation / drawing state
 ═══════════════════════════════════════════════ */
-let currentTool   = 'pan';    // default ปากกาเปลี่ยนเป็น pan
+let currentTool   = 'pan';
 let drawColor     = '#ff4444';
 let strokeSize    = 3;
 let drawOpacity   = 1.0;
@@ -1822,7 +1780,7 @@ async function saveAnnotation() {
 }
 
 /* ═══════════════════════════════════════════════
-   Gallery data + filters 
+   Gallery data + filters (unchanged from original)
 ═══════════════════════════════════════════════ */
 function absPath(rel, entry) {
   // Priority: 1) Google Drive public URL (must be non-empty string)
@@ -1953,9 +1911,15 @@ function renderGrid() {
     const card = document.createElement('div');
     card.className = 'card' + (e.is_pinned ? ' pinned' : '');
     card.onclick   = () => openLightbox(i);
+    const imgUrl = absPath(e.path, e);
     card.innerHTML = `
       ${mark ? `<div class="mark-bar ${mark}"></div>` : ''}
-      <img src="${absPath(e.path, e)}" alt="${e.symbol}" loading="lazy" onerror="this.style.background='#1c2128'"/>
+      <div class="card-thumb" id="ct-${i}">
+        <img src="${imgUrl}" alt="${e.symbol}" loading="lazy"
+             onload="this.classList.add('loaded');this.parentElement.classList.add('img-loaded')"
+             onerror="this.parentElement.classList.add('img-error')"/>
+        <div class="thumb-err">🖼️</div>
+      </div>
       <div class="card-info">
         <div class="card-symbol">
           ${e.symbol}
@@ -1964,7 +1928,7 @@ function renderGrid() {
           ${mark   ? `<span class="badge badge-${mark.toLowerCase()}">${mark}</span>` : ''}
         </div>
         <div class="card-date">${e.date} ${e.time.replace('-',':')} · ${e.market}${e.drive_name ? ' · '+e.drive_name : ''}</div>
-        ${n?.note ? `<div style="font-size:11px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${n.note}</div>` : ''}
+        ${n?.note ? `<div style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${n.note}</div>` : ''}
       </div>`;
     frag.appendChild(card);
   });
@@ -2043,7 +2007,7 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
   padding: 10px 16px; display: flex; align-items: center; gap: 10px; flex-shrink: 0; flex-wrap: wrap;
 }
 #header h1 { font-size: 14px; color: var(--accent); margin-right: 8px; white-space: nowrap; }
-select, input[type=date], input[type=text] {
+select, input[type=date] {
   background: var(--bg); border: 1px solid var(--border); color: var(--text);
   padding: 6px 8px; border-radius: 6px; font-size: 13px;
 }
@@ -2058,6 +2022,11 @@ select:focus, input:focus { outline: none; border-color: var(--accent); }
 .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
 .btn-danger { background: transparent; border: 1px solid var(--bear); color: var(--bear); }
 #frame-info { font-size: 12px; color: var(--muted); white-space: nowrap; }
+/* ── Date range picker ── */
+#date-range-wrap { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+#sel-date-preset { min-width: 110px; }
+#date-custom-row { display: flex; align-items: center; gap: 5px; }
+#date-from, #date-to { width: 128px; padding: 5px 7px; font-size: 12px; }
 
 /* ── Main image ── */
 #viewport {
@@ -2291,26 +2260,30 @@ body.theatre #viewport:hover #play-hud  { opacity: 1; }
     <option value="">All Tags</option>
   </select>
 
-  <!-- Date range filter -->
-  <select id="date-quick" onchange="onQuickDate()">
-    <option value="">-- ช่วงเวลาด่วน --</option>
-    <option value="today">วันนี้</option>
-    <option value="yesterday">เมื่อวาน</option>
-    <option value="3d">3 วันที่ผ่านมา</option>
-    <option value="5d">5 วันที่ผ่านมา</option>
-    <option value="1w">1 สัปดาห์</option>
-    <option value="2w">2 สัปดาห์</option>
-    <option value="3w">3 สัปดาห์</option>
-    <option value="1m">1 เดือน</option>
-    <option value="2m">2 เดือน</option>
-    <option value="3m">3 เดือน</option>
-    <option value="6m">6 เดือน</option>
-    <option value="1y">1 ปี</option>
-    <option value="all">ทั้งหมด</option>
-  </select>
-  <input type="date" id="date-from" onchange="applySource()" placeholder="เริ่มต้น"/>
-  <input type="date" id="date-to"   onchange="applySource()" placeholder="สิ้นสุด"/>
-  <button class="btn btn-outline" onclick="clearDateRange()">ล้างช่วงวันที่</button>
+  <!-- ── Date range picker ── -->
+  <div id="date-range-wrap">
+    <select id="sel-date-preset" onchange="onDatePresetChange()" title="Date range preset">
+      <option value="all">ทั้งหมด</option>
+      <option value="today">วันนี้</option>
+      <option value="yesterday">เมื่อวาน</option>
+      <option value="3d">3 วัน</option>
+      <option value="5d">5 วัน</option>
+      <option value="1w">1 สัปดาห์</option>
+      <option value="2w">2 สัปดาห์</option>
+      <option value="3w">3 สัปดาห์</option>
+      <option value="1m">1 เดือน</option>
+      <option value="2m">2 เดือน</option>
+      <option value="3m">3 เดือน</option>
+      <option value="6m">6 เดือน</option>
+      <option value="1y">1 ปี</option>
+      <option value="custom">กำหนดเอง…</option>
+    </select>
+    <div id="date-custom-row" style="display:none;">
+      <input type="date" id="date-from" title="From date" onchange="applySource()"/>
+      <span style="color:var(--muted);font-size:12px;">→</span>
+      <input type="date" id="date-to"   title="To date"   onchange="applySource()"/>
+    </div>
+  </div>
 
   <button id="btn-theatre"   onclick="toggleTheatre()" title="Theatre mode [T]">⬛ Theatre</button>
   <button id="btn-fullscreen" onclick="toggleFullscreen()" title="Fullscreen [F]">⛶</button>
@@ -2897,49 +2870,7 @@ function fillDrives(drives) {
   });
 }
 
-// ── Source / filters + DATE RANGE ─────────────────────────────────
-// helpers for date range quick select
-function getDateNDaysAgo(days) {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  return d.toISOString().slice(0,10);
-}
-function getDateNMonthsAgo(months) {
-  const d = new Date();
-  d.setMonth(d.getMonth() - months);
-  return d.toISOString().slice(0,10);
-}
-function onQuickDate() {
-  const val = document.getElementById('date-quick').value;
-  let from = null, to = null;
-  const today = new Date().toISOString().slice(0,10);
-  if (val === 'today')      { from = today; to = today; }
-  else if (val === 'yesterday') {
-    const yest = new Date(); yest.setDate(yest.getDate()-1);
-    from = to = yest.toISOString().slice(0,10);
-  }
-  else if (val === '3d')    { from = getDateNDaysAgo(2); to = today; }
-  else if (val === '5d')    { from = getDateNDaysAgo(4); to = today; }
-  else if (val === '1w')    { from = getDateNDaysAgo(6); to = today; }
-  else if (val === '2w')    { from = getDateNDaysAgo(13); to = today; }
-  else if (val === '3w')    { from = getDateNDaysAgo(20); to = today; }
-  else if (val === '1m')    { from = getDateNMonthsAgo(1); to = today; }
-  else if (val === '2m')    { from = getDateNMonthsAgo(2); to = today; }
-  else if (val === '3m')    { from = getDateNMonthsAgo(3); to = today; }
-  else if (val === '6m')    { from = getDateNMonthsAgo(6); to = today; }
-  else if (val === '1y')    { from = getDateNMonthsAgo(12); to = today; }
-  else if (val === 'all')   { from = null; to = null; }
-  document.getElementById('date-from').value = from || '';
-  document.getElementById('date-to').value   = to   || '';
-  applySource();
-}
-function clearDateRange() {
-  document.getElementById('date-quick').value = '';
-  document.getElementById('date-from').value = '';
-  document.getElementById('date-to').value = '';
-  applySource();
-}
-
+// ── Source / filters ──────────────────────────────────────────────
 function onSymbolChange() { applySource(); }
 
 function applySource() {
@@ -2947,8 +2878,6 @@ function applySource() {
   const mkt = document.getElementById('sel-market').value;
   const drv = document.getElementById('sel-drive').value;
   const tag = document.getElementById('sel-tag').value;
-  const dateFrom = document.getElementById('date-from').value;
-  const dateTo   = document.getElementById('date-to').value;
 
   clearTimeout(timer);
   playing = false;
@@ -2963,12 +2892,13 @@ function applySource() {
 
   source = ALL.filter(e => {
     if (e.symbol !== sym) return false;
-    if (mkt && e.market !== mkt) return false;
+    if (mkt && e.market     !== mkt) return false;
     if (drv && e.drive_name !== drv) return false;
-    if (tag && e.tag !== tag) return false;
-    // date range filtering
-    if (dateFrom && e.date < dateFrom) return false;
-    if (dateTo   && e.date > dateTo)   return false;
+    if (tag && e.tag        !== tag) return false;
+    // date range filter
+    const range = getDateRange();
+    if (range.from && e.date < range.from) return false;
+    if (range.to   && e.date > range.to)   return false;
     return true;
   }).sort((a, b) => (a.sort_key || '').localeCompare(b.sort_key || ''));
 
@@ -3098,11 +3028,64 @@ function onSpeedChange() {
   document.getElementById('speed-val').textContent = SPEEDS[speedIdx] + '×';
 }
 
-function jumpToDate() {
-  const d = document.getElementById('jump-date').value;
-  if (!d || !source.length) return;
-  const i = source.findIndex(e => e.date >= d);
-  if (i >= 0) { idx = i; syncScrubber(); renderFrame(); }
+// ── Date range helpers ────────────────────────────────────────────
+function getDateRange() {
+  const preset = document.getElementById('sel-date-preset').value;
+  if (preset === 'all') return { from: '', to: '' };
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  function fmt(d) {
+    return d.toISOString().slice(0, 10);
+  }
+  function daysAgo(n) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - n);
+    return d;
+  }
+
+  if (preset === 'custom') {
+    return {
+      from: document.getElementById('date-from').value || '',
+      to:   document.getElementById('date-to').value   || '',
+    };
+  }
+
+  const toDate = fmt(today);
+  const map = {
+    today:     fmt(today),
+    yesterday: fmt(daysAgo(1)),
+    '3d':      fmt(daysAgo(2)),
+    '5d':      fmt(daysAgo(4)),
+    '1w':      fmt(daysAgo(6)),
+    '2w':      fmt(daysAgo(13)),
+    '3w':      fmt(daysAgo(20)),
+    '1m':      fmt(daysAgo(29)),
+    '2m':      fmt(daysAgo(59)),
+    '3m':      fmt(daysAgo(89)),
+    '6m':      fmt(daysAgo(179)),
+    '1y':      fmt(daysAgo(364)),
+  };
+  // "yesterday" → from=yesterday, to=yesterday
+  if (preset === 'yesterday') return { from: map.yesterday, to: map.yesterday };
+  return { from: map[preset] || '', to: toDate };
+}
+
+function onDatePresetChange() {
+  const isCustom = document.getElementById('sel-date-preset').value === 'custom';
+  document.getElementById('date-custom-row').style.display = isCustom ? 'flex' : 'none';
+  if (isCustom) {
+    // Pre-fill custom inputs with current computed range for convenience
+    const r = getDateRange();
+    if (!document.getElementById('date-from').value) {
+      const today = new Date();
+      const weekAgo = new Date(today); weekAgo.setDate(weekAgo.getDate() - 6);
+      document.getElementById('date-from').value = weekAgo.toISOString().slice(0, 10);
+      document.getElementById('date-to').value   = today.toISOString().slice(0, 10);
+    }
+  }
+  applySource();
 }
 
 // ── Render (async — รอ double-buffer swap) ─────────────────────────
