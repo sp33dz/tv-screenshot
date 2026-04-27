@@ -439,6 +439,8 @@ def _make_on_telegram(telegram_sender: object, send_fn: Any):
     Build on_telegram callback.
 
     Reads result.drive_name / drive_label already populated by on_drive_sync.
+    Reads result.batch_index / batch_total set by PlaywrightEngine.run_all()
+    so the caption shows "[index/total]" (e.g. "📊 BTCTHB | CRYPTO [5/10]").
     Uses send_screenshot_to_telegram() wrapper (None-safe — sender may be None).
     """
     def on_telegram(result: object) -> None:
@@ -449,6 +451,8 @@ def _make_on_telegram(telegram_sender: object, send_fn: Any):
         drive_name: str = getattr(result, "drive_name", "")
         drive_label: str = getattr(result, "drive_label", "")
         tag: str = getattr(result, "tag", "")
+        batch_index: int = getattr(result, "batch_index", 0)
+        batch_total: int = getattr(result, "batch_total", 0)
 
         if not filepath:
             logger.warning("on_telegram: no filepath in result for %s", symbol)
@@ -464,10 +468,15 @@ def _make_on_telegram(telegram_sender: object, send_fn: Any):
                 drive_name,
                 drive_label,
                 tag,
+                batch_index,
+                batch_total,
             )
             result.telegram_sent = sent  # type: ignore[attr-defined]
             if sent:
-                logger.info("Telegram sent: %s (%s)", symbol, market)
+                logger.info(
+                    "Telegram sent: %s (%s) [%d/%d]",
+                    symbol, market, batch_index, batch_total,
+                )
             else:
                 logger.warning("Telegram returned False for %s", symbol)
 

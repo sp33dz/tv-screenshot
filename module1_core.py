@@ -137,6 +137,9 @@ class ScreenshotResult:
     drive_public_url: str = ""   # Google Drive public URL (thumbnail format)
     # Telegram — populated by on_telegram callback
     telegram_sent: bool = False
+    # Batch info — set by run_all() so on_telegram can show [index/total]
+    batch_index: int = 0   # 1-based position in this run (e.g. 5)
+    batch_total: int = 0   # total stocks in this run (e.g. 10)
 
 
 # ─────────────────────────────────────────────
@@ -494,16 +497,21 @@ class PlaywrightEngine:
         stock: dict,
         on_save: Optional[Callable[[ScreenshotResult], None]] = None,
         tag: str = "",
+        batch_index: int = 0,
+        batch_total: int = 0,
     ) -> ScreenshotResult:
         """
         Navigate to one stock URL, wait for chart, screenshot, save.
         After save: fire on_drive_sync → on_telegram callbacks.
 
         Args:
-            page:    Playwright Page object
-            stock:   Dict {symbol, url, market}
-            on_save: Legacy storage callback(ScreenshotResult) — still supported
-            tag:     Optional event tag (e.g. "NY_OPEN")
+            page:        Playwright Page object
+            stock:       Dict {symbol, url, market}
+            on_save:     Legacy storage callback(ScreenshotResult) — still supported
+            tag:         Optional event tag (e.g. "NY_OPEN")
+            batch_index: 1-based position in this run's batch (e.g. 5)
+            batch_total: Total stocks in this run's batch (e.g. 10)
+                         When both > 0, caption shows "[5/10]" in Telegram.
         """
         symbol: str = stock.get("symbol", "UNKNOWN").upper()
         url: str = stock.get("url", "")
@@ -558,6 +566,8 @@ class PlaywrightEngine:
                     filepath=str(filepath),
                     timestamp=now_thai,
                     tag=tag,
+                    batch_index=batch_index,
+                    batch_total=batch_total,
                 )
 
                 # ── 1. Legacy on_save (StorageManager) ──────────────
@@ -631,6 +641,11 @@ class PlaywrightEngine:
             len(self.stocks), self.headless,
         )
 
+        # Total stocks across ALL profiles — used for [index/total] in Telegram
+        total_stocks: int = len(self.stocks)
+        # Running counter across profiles (1-based)
+        _batch_counter: List[int] = [0]  # mutable container so inner scope can mutate
+
         # Group stocks by profile
         profile_groups: Dict[str, List[dict]] = defaultdict(list)
         for stock in self.stocks:
@@ -683,8 +698,11 @@ class PlaywrightEngine:
                         page = context.new_page()
 
                         for stock in stock_list:
+                            _batch_counter[0] += 1
                             result = self.capture_one(
-                                page, stock, on_save=on_save, tag=tag
+                                page, stock, on_save=on_save, tag=tag,
+                                batch_index=_batch_counter[0],
+                                batch_total=total_stocks,
                             )
                             results.append(result)
 
