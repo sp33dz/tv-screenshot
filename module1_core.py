@@ -321,6 +321,29 @@ class PlaywrightEngine:
     _CHART_READY_SELECTOR: str = 'div[class*="chart-container"]'
     _SPINNER_SELECTOR: str = 'div[class*="spinner"]'
 
+    # ── Popup / Modal dismiss selectors (TradingView promotional overlays) ──
+    # ลำดับสำคัญ: ลองปิดด้วย selector ที่เฉพาะเจาะจงก่อน แล้วค่อย fallback ไป generic
+    _POPUP_CLOSE_SELECTORS: list = [
+        # ปุ่ม × / Close บน promotional modal (Crypto sale, Black Friday ฯลฯ)
+        'button[data-name="close"]',
+        'button[aria-label="Close"]',
+        'button[aria-label="close"]',
+        # div ที่มี class close หรือ dismiss
+        'div[class*="closeButton"]',
+        'div[class*="close-button"]',
+        'div[class*="modal-close"]',
+        # ปุ่ม × generic ที่อยู่ใน dialog/overlay
+        'div[role="dialog"] button[class*="close"]',
+        'div[role="dialog"] button[class*="Close"]',
+        # TradingView popup overlay wrapper
+        'div[class*="popup"] button[class*="close"]',
+        'div[class*="overlay"] button[class*="close"]',
+        # Escape-hatch: ปุ่มที่มี text เป็น × หรือ ✕
+        'button:has-text("×")',
+        'button:has-text("✕")',
+        'button:has-text("✖")',
+    ]
+
     def __init__(self, config: dict) -> None:
         self.config = config
         self.stocks: List[dict] = config.get("stocks", [])
@@ -447,6 +470,76 @@ class PlaywrightEngine:
             except OSError as exc:
                 logger.warning("Could not remove lock file %s: %s", lock_path, exc)
 
+    def _dismiss_popups(self, page: object, symbol: str) -> None:
+        """
+        ปิด popup / modal โฆษณาของ TradingView (เช่น Crypto sale, Black Friday)
+        ก่อนถ่าย screenshot เพื่อป้องกัน popup บัง chart
+
+        ลำดับการทำงาน:
+          1. กด Escape เพื่อปิด modal ที่รองรับ keyboard dismiss
+          2. วนลอง click ปุ่มปิดด้วย selector รายการใน _POPUP_CLOSE_SELECTORS
+          3. ถ้าไม่มี popup → ผ่านไปเงียบๆ ไม่ raise error
+        """
+        try:
+            from playwright.sync_api import TimeoutError as PWTimeout  # type: ignore
+        except ImportError:
+            return
+
+        # ── Step 1: Escape key (ปิด modal ที่รองรับ) ──────────────────────
+        try:
+            page.keyboard.press("Escape")  # type: ignore
+            page.wait_for_timeout(400)  # type: ignore
+        except Exception:
+            pass
+
+        # ── Step 2: Click close buttons ────────────────────────────────────
+        dismissed = False
+        for selector in self._POPUP_CLOSE_SELECTORS:
+            try:
+                btn = page.locator(selector).first  # type: ignore
+                # visible() check ก่อน click เพื่อไม่ให้ error บน element ที่ซ่อนอยู่
+                if btn.is_visible(timeout=600):  # type: ignore
+                    btn.click(timeout=2000)  # type: ignore
+                    page.wait_for_timeout(500)  # type: ignore
+                    dismissed = True
+                    logger.info("  [%s] Popup dismissed via selector: %s", symbol, selector)
+                    break
+            except Exception:
+                continue  # selector นี้ไม่มี/ไม่ visible → ลอง selector ถัดไป
+
+        # ── Step 3: JavaScript fallback — คลิก element ที่ซ่อน X ไว้ใน shadow DOM ──
+        if not dismissed:
+            try:
+                closed_count: int = page.evaluate(  # type: ignore
+                    """() => {
+                        let count = 0;
+                        // หา button ที่มี aria-label หรือ title ว่า close/dismiss
+                        const btns = document.querySelectorAll('button');
+                        for (const btn of btns) {
+                            const label = (btn.getAttribute('aria-label') || '').toLowerCase();
+                            const title = (btn.getAttribute('title') || '').toLowerCase();
+                            const text  = btn.textContent.trim();
+                            if (label.includes('close') || title.includes('close')
+                                    || text === '×' || text === '✕' || text === '✖') {
+                                const rect = btn.getBoundingClientRect();
+                                if (rect.width > 0 && rect.height > 0) {
+                                    btn.click();
+                                    count++;
+                                }
+                            }
+                        }
+                        return count;
+                    }"""
+                )
+                if closed_count > 0:
+                    page.wait_for_timeout(400)  # type: ignore
+                    logger.info(
+                        "  [%s] Popup dismissed via JS fallback (%d button(s) clicked)",
+                        symbol, closed_count,
+                    )
+            except Exception:
+                pass  # JS fallback ล้มเหลว → ยังคง screenshot ต่อไป
+
     def _wait_for_chart(self, page: object, symbol: str) -> bool:
         """
         Wait for TradingView chart and indicators to finish loading.
@@ -534,6 +627,9 @@ class PlaywrightEngine:
                         "[%s] Chart may not be fully loaded — proceeding anyway",
                         symbol,
                     )
+
+                # ── Dismiss popup/modal overlays before screenshot ────────
+                self._dismiss_popups(page, symbol)
 
                 now = datetime.now()
                 # ใช้เวลาไทย (UTC+7) สำหรับชื่อไฟล์ folder และ timestamp ทุกอย่าง
