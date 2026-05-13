@@ -518,18 +518,57 @@ class PlaywrightEngine:
                         """() => {
                             let count = 0;
 
-                            // Strategy A: find countdown timer then walk up to find X btn
+                            // Helper: ตรวจว่า element อยู่ใน nav/sidebar/toolbar ของ TV
+                            // เพื่อป้องกันการคลิก user-menu หรือ toolbar buttons โดยไม่ตั้งใจ
+                            function isNavElement(el) {
+                                let node = el;
+                                for (let i = 0; i < 8; i++) {
+                                    if (!node) break;
+                                    const tag = (node.tagName || '').toLowerCase();
+                                    const role = (node.getAttribute('role') || '').toLowerCase();
+                                    const cls  = (node.getAttribute('class') || '').toLowerCase();
+                                    const dn   = (node.getAttribute('data-name') || '').toLowerCase();
+                                    if (tag === 'nav' || tag === 'header' || tag === 'aside'
+                                            || role === 'navigation' || role === 'menubar'
+                                            || role === 'toolbar'
+                                            || cls.includes('toolbar') || cls.includes('sidebar')
+                                            || cls.includes('leftbar') || cls.includes('topbar')
+                                            || cls.includes('header') || cls.includes('menu-bar')
+                                            || dn.includes('toolbar') || dn.includes('sidebar')) {
+                                        return true;
+                                    }
+                                    node = node.parentElement;
+                                }
+                                return false;
+                            }
+
+                            // Helper: ตรวจว่า popup/overlay ครอบคลุมพื้นที่ chart
+                            // (อยู่กลางหน้าจอ ไม่ใช่ขอบซ้าย/ขอบบน = nav)
+                            function isCenterOverlay(el) {
+                                const r = el.getBoundingClientRect();
+                                const vw = window.innerWidth;
+                                const vh = window.innerHeight;
+                                // ต้องอยู่กลางหน้าจอ (left > 10% ของ viewport)
+                                return r.left > vw * 0.10 && r.top > 20
+                                    && r.width > 150 && r.height > 100;
+                            }
+
+                            // Strategy A: หา countdown timer (xx:xx:xx)
+                            // popup โฆษณา TV จะมี countdown เสมอ
                             const allDivs = document.querySelectorAll('div');
                             for (const d of allDivs) {
                                 if (/\\b\\d{2}:\\d{2}:\\d{2}\\b/.test(d.textContent)
-                                        && d.children.length < 8) {
+                                        && d.children.length < 8
+                                        && !isNavElement(d)) {
                                     let node = d;
-                                    for (let i = 0; i < 6; i++) {
+                                    for (let i = 0; i < 8; i++) {
                                         node = node.parentElement;
                                         if (!node) break;
+                                        if (isNavElement(node)) break;
                                         const btns = node.querySelectorAll(
                                             'button, [role="button"]');
                                         for (const btn of btns) {
+                                            if (isNavElement(btn)) continue;
                                             const r = btn.getBoundingClientRect();
                                             if (r.width > 0 && r.height > 0
                                                     && r.width < 60 && r.height < 60) {
@@ -538,8 +577,7 @@ class PlaywrightEngine:
                                                     || '').toLowerCase();
                                                 if (txt === '\u00d7' || txt === '\u2715'
                                                         || txt === '\u2716' || txt === 'X'
-                                                        || lbl.includes('close')
-                                                        || btn.innerHTML.includes('svg')) {
+                                                        || lbl.includes('close')) {
                                                     btn.click();
                                                     count++;
                                                     break;
@@ -553,22 +591,23 @@ class PlaywrightEngine:
                             }
                             if (count > 0) return count;
 
-                            // Strategy B: high z-index overlay -> find close btn
+                            // Strategy B: overlay z-index สูง อยู่กลางหน้าจอ
                             const overlays = Array.from(
-                                document.querySelectorAll('div, section, aside')
+                                document.querySelectorAll('div, section')
                             ).filter(el => {
                                 const z = parseInt(
                                     window.getComputedStyle(el).zIndex, 10);
-                                const r = el.getBoundingClientRect();
-                                return z > 1000 && r.width > 200 && r.height > 200;
+                                return z > 1000 && isCenterOverlay(el)
+                                    && !isNavElement(el);
                             });
                             for (const overlay of overlays) {
                                 const btns = overlay.querySelectorAll(
                                     'button, [role="button"]');
                                 for (const btn of btns) {
+                                    if (isNavElement(btn)) continue;
                                     const r = btn.getBoundingClientRect();
                                     if (r.width > 0 && r.height > 0
-                                            && r.width < 80 && r.height < 80) {
+                                            && r.width < 60 && r.height < 60) {
                                         const txt = btn.textContent.trim();
                                         const lbl = (btn.getAttribute('aria-label')
                                             || '').toLowerCase();
@@ -577,9 +616,7 @@ class PlaywrightEngine:
                                         if (txt === '\u00d7' || txt === '\u2715'
                                                 || txt === '\u2716'
                                                 || lbl.includes('close')
-                                                || cls.includes('close')
-                                                || btn.innerHTML.toLowerCase()
-                                                    .includes('svg')) {
+                                                || cls.includes('close')) {
                                             btn.click();
                                             count++;
                                             break;
@@ -590,20 +627,22 @@ class PlaywrightEngine:
                             }
                             if (count > 0) return count;
 
-                            // Strategy C: generic visible close-like buttons
+                            // Strategy C: ปุ่ม × / ✕ visible ที่ไม่ใช่ nav
+                            // (ไม่ใช้ cls.includes('close') เพื่อหลีกเลี่ยง nav buttons)
                             for (const btn of document.querySelectorAll(
                                     'button, [role="button"]')) {
+                                if (isNavElement(btn)) continue;
                                 const r = btn.getBoundingClientRect();
                                 if (r.width <= 0 || r.height <= 0) continue;
+                                if (r.width > 80 || r.height > 80) continue;
+                                // ต้องอยู่กลางหน้าจอ ไม่ใช่ขอบซ้าย
+                                if (r.left < window.innerWidth * 0.08) continue;
                                 const txt = btn.textContent.trim();
                                 const lbl = (btn.getAttribute('aria-label')
                                     || '').toLowerCase();
-                                const cls = (btn.getAttribute('class')
-                                    || '').toLowerCase();
                                 if (txt === '\u00d7' || txt === '\u2715'
                                         || txt === '\u2716'
-                                        || lbl.includes('close')
-                                        || cls.includes('close')) {
+                                        || lbl.includes('close')) {
                                     btn.click();
                                     count++;
                                 }
