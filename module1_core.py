@@ -324,21 +324,19 @@ class PlaywrightEngine:
     # ── Popup / Modal dismiss selectors (TradingView promotional overlays) ──
     # ลำดับสำคัญ: ลองปิดด้วย selector ที่เฉพาะเจาะจงก่อน แล้วค่อย fallback ไป generic
     _POPUP_CLOSE_SELECTORS: list = [
-        # ปุ่ม × / Close บน promotional modal (Crypto sale, Black Friday ฯลฯ)
         'button[data-name="close"]',
         'button[aria-label="Close"]',
         'button[aria-label="close"]',
-        # div ที่มี class close หรือ dismiss
         'div[class*="closeButton"]',
         'div[class*="close-button"]',
         'div[class*="modal-close"]',
-        # ปุ่ม × generic ที่อยู่ใน dialog/overlay
+        'button[class*="closeButton"]',
+        'button[class*="close-button"]',
         'div[role="dialog"] button[class*="close"]',
         'div[role="dialog"] button[class*="Close"]',
-        # TradingView popup overlay wrapper
         'div[class*="popup"] button[class*="close"]',
         'div[class*="overlay"] button[class*="close"]',
-        # Escape-hatch: ปุ่มที่มี text เป็น × หรือ ✕
+        'div[class*="modal"] button[class*="close"]',
         'button:has-text("×")',
         'button:has-text("✕")',
         'button:has-text("✖")',
@@ -519,19 +517,95 @@ class PlaywrightEngine:
                     closed_count: int = page.evaluate(  # type: ignore
                         """() => {
                             let count = 0;
-                            // หา button ที่มี aria-label หรือ title ว่า close/dismiss
-                            const btns = document.querySelectorAll('button');
-                            for (const btn of btns) {
-                                const label = (btn.getAttribute('aria-label') || '').toLowerCase();
-                                const title = (btn.getAttribute('title') || '').toLowerCase();
-                                const text  = btn.textContent.trim();
-                                if (label.includes('close') || title.includes('close')
-                                        || text === '\u00d7' || text === '\u2715' || text === '\u2716') {
-                                    const rect = btn.getBoundingClientRect();
-                                    if (rect.width > 0 && rect.height > 0) {
-                                        btn.click();
-                                        count++;
+
+                            // Strategy A: find countdown timer then walk up to find X btn
+                            const allDivs = document.querySelectorAll('div');
+                            for (const d of allDivs) {
+                                if (/\\b\\d{2}:\\d{2}:\\d{2}\\b/.test(d.textContent)
+                                        && d.children.length < 8) {
+                                    let node = d;
+                                    for (let i = 0; i < 6; i++) {
+                                        node = node.parentElement;
+                                        if (!node) break;
+                                        const btns = node.querySelectorAll(
+                                            'button, [role="button"]');
+                                        for (const btn of btns) {
+                                            const r = btn.getBoundingClientRect();
+                                            if (r.width > 0 && r.height > 0
+                                                    && r.width < 60 && r.height < 60) {
+                                                const txt = btn.textContent.trim();
+                                                const lbl = (btn.getAttribute('aria-label')
+                                                    || '').toLowerCase();
+                                                if (txt === '\u00d7' || txt === '\u2715'
+                                                        || txt === '\u2716' || txt === 'X'
+                                                        || lbl.includes('close')
+                                                        || btn.innerHTML.includes('svg')) {
+                                                    btn.click();
+                                                    count++;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        if (count > 0) break;
                                     }
+                                    if (count > 0) break;
+                                }
+                            }
+                            if (count > 0) return count;
+
+                            // Strategy B: high z-index overlay -> find close btn
+                            const overlays = Array.from(
+                                document.querySelectorAll('div, section, aside')
+                            ).filter(el => {
+                                const z = parseInt(
+                                    window.getComputedStyle(el).zIndex, 10);
+                                const r = el.getBoundingClientRect();
+                                return z > 1000 && r.width > 200 && r.height > 200;
+                            });
+                            for (const overlay of overlays) {
+                                const btns = overlay.querySelectorAll(
+                                    'button, [role="button"]');
+                                for (const btn of btns) {
+                                    const r = btn.getBoundingClientRect();
+                                    if (r.width > 0 && r.height > 0
+                                            && r.width < 80 && r.height < 80) {
+                                        const txt = btn.textContent.trim();
+                                        const lbl = (btn.getAttribute('aria-label')
+                                            || '').toLowerCase();
+                                        const cls = (btn.getAttribute('class')
+                                            || '').toLowerCase();
+                                        if (txt === '\u00d7' || txt === '\u2715'
+                                                || txt === '\u2716'
+                                                || lbl.includes('close')
+                                                || cls.includes('close')
+                                                || btn.innerHTML.toLowerCase()
+                                                    .includes('svg')) {
+                                            btn.click();
+                                            count++;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (count > 0) break;
+                            }
+                            if (count > 0) return count;
+
+                            // Strategy C: generic visible close-like buttons
+                            for (const btn of document.querySelectorAll(
+                                    'button, [role="button"]')) {
+                                const r = btn.getBoundingClientRect();
+                                if (r.width <= 0 || r.height <= 0) continue;
+                                const txt = btn.textContent.trim();
+                                const lbl = (btn.getAttribute('aria-label')
+                                    || '').toLowerCase();
+                                const cls = (btn.getAttribute('class')
+                                    || '').toLowerCase();
+                                if (txt === '\u00d7' || txt === '\u2715'
+                                        || txt === '\u2716'
+                                        || lbl.includes('close')
+                                        || cls.includes('close')) {
+                                    btn.click();
+                                    count++;
                                 }
                             }
                             return count;
