@@ -1,23 +1,19 @@
 #!/usr/bin/env python3
 """
 snapshot_run.py  —  On-demand TradingView screenshot
-KEY FIX:
-  - Use /chart/new/ URL path which creates a FRESH chart ignoring saved layouts
-  - Verify symbol via DOM innerText before screenshotting
-  - dismiss_all() called before every screenshot
-  - Read INPUT_RUN_TOKEN so manifest.json carries it for STATUS JSON generation
+Strategy: Use /chart/new/ URL (bypasses saved layout), verify symbol from DOM,
+          dismiss all dialogs robustly before screenshotting.
 """
 import os, json, sys, time
 from pathlib import Path
 from datetime import datetime
 
-symbol     = os.environ.get("INPUT_SYMBOL",     "AAPL").strip().upper()
-exchange   = os.environ.get("INPUT_EXCHANGE",   "").strip().upper()
-tfs_raw    = os.environ.get("INPUT_TIMEFRAMES", "60,240,D,W").strip()
-wait_sec   = int(os.environ.get("INPUT_WAIT_SEC", "18"))
-theme      = os.environ.get("INPUT_THEME",      "dark")
-tv_session = os.environ.get("TV_SESSION_JSON",  "")
-run_token  = os.environ.get("INPUT_RUN_TOKEN",  "").strip()
+symbol    = os.environ.get("INPUT_SYMBOL",     "AAPL").strip().upper()
+exchange  = os.environ.get("INPUT_EXCHANGE",   "").strip().upper()
+tfs_raw   = os.environ.get("INPUT_TIMEFRAMES", "60,240,D,W").strip()
+wait_sec  = int(os.environ.get("INPUT_WAIT_SEC", "18"))
+theme     = os.environ.get("INPUT_THEME",      "dark")
+tv_session= os.environ.get("TV_SESSION_JSON",  "")
 
 timeframes = [t.strip() for t in tfs_raw.split(",") if t.strip()]
 
@@ -25,7 +21,6 @@ print(f"Symbol     : {symbol}")
 print(f"Exchange   : {exchange or 'auto'}")
 print(f"Timeframes : {timeframes}")
 print(f"Wait sec   : {wait_sec}")
-print(f"Run token  : {run_token or '(none)'}")
 print(f"Session    : {'present' if tv_session else 'MISSING'}")
 
 TF_MAP = {
@@ -36,41 +31,32 @@ TF_MAP = {
 }
 TF_LABEL = {"1":"1M","5":"5M","15":"15M","30":"30M","60":"1H","240":"4H","D":"D","W":"W"}
 
-
 def build_url(sym, exch, tf, theme):
     """
-    Use /chart/new/ to force a fresh chart that reads symbol from URL.
-    /chart/ reloads a saved layout (ignores ?symbol=).
-    /chart/new/ always starts fresh with the given symbol.
+    /chart/new/ forces a fresh chart that reads ?symbol= from URL.
+    /chart/ loads saved layout and ignores ?symbol= when session exists.
     """
     iv     = TF_MAP.get(tf, tf)
     prefix = f"{exch}:{sym}" if exch else sym
     ts     = int(time.time())
     return (
         f"https://www.tradingview.com/chart/new/"
-        f"?symbol={prefix}"
-        f"&interval={iv}"
-        f"&theme={theme}"
-        f"&style=1"
-        f"&save_image=false"
-        f"&_t={ts}"
+        f"?symbol={prefix}&interval={iv}"
+        f"&theme={theme}&style=1&save_image=false&_t={ts}"
     )
-
 
 out_dir = Path("snapshots")
 out_dir.mkdir(exist_ok=True)
-
 
 def parse_session(sj):
     if not sj or not sj.strip():
         return [], []
     try:
         d = json.loads(sj)
-        return d.get("cookies", []), d.get("origins", [])
+        return d.get("cookies",[]), d.get("origins",[])
     except Exception as e:
         print(f"  session parse error: {e}")
         return [], []
-
 
 def make_ls_script(origins):
     if not origins:
@@ -85,9 +71,8 @@ def make_ls_script(origins):
         "});});})();"
     )
 
-
 def dismiss_all(page, label=""):
-    """Press Escape + click all close buttons to remove any open dialogs."""
+    """Press Escape 3 times + click all visible close buttons."""
     for _ in range(3):
         try:
             page.keyboard.press("Escape")
@@ -114,7 +99,6 @@ def dismiss_all(page, label=""):
     if count:
         print(f"  [{label}] dismissed {count} dialog(s)")
 
-
 def wait_spinner(page, max_sec=20):
     for _ in range(max_sec * 2):
         try:
@@ -125,14 +109,12 @@ def wait_spinner(page, max_sec=20):
             return
         page.wait_for_timeout(500)
 
-
 def wait_chart(page, max_sec=25):
     try:
-        page.wait_for_selector('div[class*="chart-container"]', timeout=max_sec * 1000)
+        page.wait_for_selector('div[class*="chart-container"]', timeout=max_sec*1000)
     except Exception:
         print("  chart-container timeout")
     wait_spinner(page, 15)
-
 
 def read_symbol_from_dom(page):
     """Read the currently displayed symbol from TradingView DOM."""
@@ -154,7 +136,6 @@ def read_symbol_from_dom(page):
                     return txt
         except Exception:
             pass
-    # Fallback: extract from page title
     try:
         title = page.title()
         part = title.split("—")[0].strip().split("·")[0].strip()
@@ -162,20 +143,16 @@ def read_symbol_from_dom(page):
     except Exception:
         return ""
 
-
 def verify_symbol(page, sym, label):
     dom_sym = read_symbol_from_dom(page)
     match = sym.upper() in dom_sym
     print(f"  [{label}] DOM symbol: {dom_sym!r}  expected={sym}  match={match}")
     return match
 
-
-# ─────────────────────────────────────────────────────────────
 # Main
-# ─────────────────────────────────────────────────────────────
 from playwright.sync_api import sync_playwright
 
-results = []
+results   = []
 launch_args = [
     "--window-size=1920,1080",
     "--disable-notifications",
@@ -219,8 +196,7 @@ with sync_playwright() as pw:
     for idx, tf_key in enumerate(timeframes):
         tf_lbl   = TF_LABEL.get(tf_key, tf_key)
         out_path = out_dir / f"{symbol}_{tf_lbl}.png"
-
-        url = build_url(symbol, exchange, tf_key, theme)
+        url      = build_url(symbol, exchange, tf_key, theme)
 
         print(f"\n{'─'*55}")
         print(f"  {symbol} [{tf_lbl}]  ({idx+1}/{len(timeframes)})")
@@ -234,12 +210,12 @@ with sync_playwright() as pw:
 
             ok = verify_symbol(page, symbol, tf_lbl)
             if not ok:
-                print(f"  [{tf_lbl}] Symbol mismatch on /chart/new/ — waiting longer")
+                print(f"  [{tf_lbl}] Symbol mismatch — waiting longer then re-checking")
                 page.wait_for_timeout(3000)
                 dismiss_all(page, tf_lbl)
                 ok = verify_symbol(page, symbol, tf_lbl)
                 if not ok:
-                    print(f"  [{tf_lbl}] WARNING: symbol still wrong — saving anyway")
+                    print(f"  [{tf_lbl}] WARNING: symbol still unverified — saving anyway")
 
             extra = max(0, wait_sec - 12)
             if extra > 0:
@@ -251,47 +227,28 @@ with sync_playwright() as pw:
             img_bytes = page.screenshot(full_page=False)
             out_path.write_bytes(img_bytes)
             print(f"  Saved: {out_path} ({len(img_bytes)//1024} KB)")
-            results.append({
-                "tf": tf_key,
-                "label": tf_lbl,
-                "path": str(out_path),
-                "success": True,
-                "verified": ok,
-            })
+            results.append({"tf":tf_key,"label":tf_lbl,"path":str(out_path),"success":True,"verified":ok})
 
         except Exception as e:
             print(f"  ERROR [{tf_lbl}]: {e}")
-            results.append({
-                "tf": tf_key,
-                "label": tf_lbl,
-                "path": "",
-                "success": False,
-                "error": str(e),
-            })
+            results.append({"tf":tf_key,"label":tf_lbl,"path":"","success":False,"error":str(e)})
 
     context.close()
     browser.close()
     print("\n=== Browser closed ===")
 
 manifest = {
-    "symbol": symbol,
-    "exchange": exchange,
-    "timeframes": timeframes,
-    "theme": theme,
-    "run_token": run_token,
-    "timestamp": datetime.utcnow().isoformat() + "Z",
-    "results": results,
+    "symbol":symbol,"exchange":exchange,"timeframes":timeframes,
+    "theme":theme,"timestamp":datetime.utcnow().isoformat()+"Z","results":results,
 }
-(out_dir / "manifest.json").write_text(
-    json.dumps(manifest, indent=2, ensure_ascii=False),
-    encoding="utf-8",
-)
+(out_dir/"manifest.json").write_text(
+    json.dumps(manifest,indent=2,ensure_ascii=False),encoding="utf-8")
 
-ok_count   = sum(1 for r in results if r["success"])
-fail_count = len(results) - ok_count
-print(f"\n{'='*55}\nDONE: {ok_count}/{len(results)} OK | {fail_count} failed")
+ok   = sum(1 for r in results if r["success"])
+fail = len(results)-ok
+print(f"\n{'='*55}\nDONE: {ok}/{len(results)} OK | {fail} failed")
 for r in results:
-    vfy = "(unverified)" if not r.get("verified", True) else ""
+    vfy = "(unverified)" if not r.get("verified",True) else ""
     print(f"  {'OK' if r['success'] else 'ERR'}  {symbol}_{r['label']}  {vfy}")
 
-sys.exit(0 if fail_count == 0 else 1)
+sys.exit(0 if fail==0 else 1)
