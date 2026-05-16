@@ -672,7 +672,10 @@ function ghHeaders(){
   };
 }
 
+var _triggerTime = 0; // epoch ms just before dispatch
+
 async function triggerWorkflow(symbol, exch, tfs, waitSec){
+  _triggerTime = Date.now(); // record time BEFORE triggering
   var url = 'https://api.github.com/repos/' + S.repo + '/actions/workflows/' + S.wf + '/dispatches';
   var body = JSON.stringify({
     ref: S.branch,
@@ -692,18 +695,30 @@ async function triggerWorkflow(symbol, exch, tfs, waitSec){
 }
 
 async function getRunId(){
-  for(var i = 0; i < 10; i++){
-    await sleep(2500);
-    var url = 'https://api.github.com/repos/' + S.repo + '/actions/runs?per_page=5&event=workflow_dispatch';
+  // Find the run that was created AFTER we triggered (using _triggerTime).
+  // This prevents accidentally picking up a run from a different tab/symbol.
+  var wfName = S.wf.replace('.yml','').replace('.yaml','').toLowerCase();
+  for(var i = 0; i < 15; i++){
+    await sleep(3000);
+    var url = 'https://api.github.com/repos/' + S.repo + '/actions/runs?per_page=10&event=workflow_dispatch';
     var r   = await fetch(url, { headers: ghHeaders() });
     var d   = await r.json();
-    if(d.workflow_runs && d.workflow_runs.length > 0){
-      var wfName = S.wf.replace('.yml','').replace('.yaml','').toLowerCase();
-      var run = d.workflow_runs.find(function(x){
-        return (x.path || '').toLowerCase().includes(wfName) ||
-               (x.name || '').toLowerCase().includes('snapshot');
+    if(!d.workflow_runs) continue;
+    // Filter: workflow name matches AND created_at is after our trigger time
+    var candidates = d.workflow_runs.filter(function(x){
+      var matchWf = (x.path || '').toLowerCase().includes(wfName) ||
+                    (x.name || '').toLowerCase().includes('snapshot');
+      var createdMs = new Date(x.created_at).getTime();
+      // Allow 10s clock skew between client and GitHub
+      return matchWf && createdMs >= (_triggerTime - 10000);
+    });
+    if(candidates.length > 0){
+      // Pick the most recently created one (our run)
+      candidates.sort(function(a,b){
+        return new Date(b.created_at) - new Date(a.created_at);
       });
-      return run ? run.id : d.workflow_runs[0].id;
+      console.log('[Snapshot] Found run #' + candidates[0].id + ' created ' + candidates[0].created_at);
+      return candidates[0].id;
     }
   }
   return null;
