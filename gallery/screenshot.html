@@ -626,8 +626,8 @@ async function takeShot(){
     await sleep(3500);
     setProgress(10);
 
-    // Step 2: get run ID
-    var runId = await getRunId();
+    // Step 2: get run ID — pass symbol so we match OUR run, not another tab's
+    var runId = await getRunId(symbol);
     if(!runId) throw new Error('ไม่พบ run ID — ตรวจสอบ workflow name และ branch');
     setStatus('run', '⏳ Run <span>#' + runId + '</span> กำลังรัน...');
 
@@ -694,31 +694,42 @@ async function triggerWorkflow(symbol, exch, tfs, waitSec){
   }
 }
 
-async function getRunId(){
-  // Find the run that was created AFTER we triggered (using _triggerTime).
-  // This prevents accidentally picking up a run from a different tab/symbol.
+async function getRunId(symbol){
+  // Match by BOTH symbol (in display_title/name) AND created_at > _triggerTime.
+  // display_title = GitHub's run title = workflow job name = "Snapshot AMPX [...]"
+  // This is the only reliable way to identify OUR run vs runs from other tabs.
   var wfName = S.wf.replace('.yml','').replace('.yaml','').toLowerCase();
-  for(var i = 0; i < 15; i++){
+  var symUp  = symbol.toUpperCase();
+
+  for(var i = 0; i < 20; i++){
     await sleep(3000);
-    var url = 'https://api.github.com/repos/' + S.repo + '/actions/runs?per_page=10&event=workflow_dispatch';
-    var r   = await fetch(url, { headers: ghHeaders() });
-    var d   = await r.json();
+    var url = 'https://api.github.com/repos/' + S.repo
+              + '/actions/runs?per_page=15&event=workflow_dispatch';
+    var r = await fetch(url, { headers: ghHeaders() });
+    var d = await r.json();
     if(!d.workflow_runs) continue;
-    // Filter: workflow name matches AND created_at is after our trigger time
+
     var candidates = d.workflow_runs.filter(function(x){
-      var matchWf = (x.path || '').toLowerCase().includes(wfName) ||
-                    (x.name || '').toLowerCase().includes('snapshot');
+      // 1. Must be our workflow file
+      var matchWf = (x.path || '').toLowerCase().includes(wfName);
+      // 2. Must contain this tab's symbol in title (display_title or name or head_commit.message)
+      var title = ((x.display_title || '') + ' ' + (x.name || '')).toUpperCase();
+      var matchSym = title.indexOf(symUp) !== -1;
+      // 3. Must be created after we triggered (allow 15s clock skew)
       var createdMs = new Date(x.created_at).getTime();
-      // Allow 10s clock skew between client and GitHub
-      return matchWf && createdMs >= (_triggerTime - 10000);
+      var inWindow  = createdMs >= (_triggerTime - 15000);
+      return matchWf && matchSym && inWindow;
     });
+
     if(candidates.length > 0){
-      // Pick the most recently created one (our run)
       candidates.sort(function(a,b){
         return new Date(b.created_at) - new Date(a.created_at);
       });
-      console.log('[Snapshot] Found run #' + candidates[0].id + ' created ' + candidates[0].created_at);
-      return candidates[0].id;
+      var found = candidates[0];
+      console.log('[Snapshot] Matched run #' + found.id
+                  + ' title=' + (found.display_title || found.name)
+                  + ' created=' + found.created_at);
+      return found.id;
     }
   }
   return null;
