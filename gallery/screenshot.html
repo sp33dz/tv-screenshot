@@ -489,6 +489,61 @@ var TF_LBL = {'1':'1M','5':'5M','15':'15M','30':'30M','60':'1H','240':'4H','D':'
 function tfLbl(tf){ return TF_LBL[tf] || tf; }
 
 /* ════════════════════════════════════════════
+   URL PARAMS HELPER
+   Supports: ?symbol=ASPN&tf=1H,4H,D,W&exch=NYSE&theme=dark&wait=18&auto=1
+════════════════════════════════════════════ */
+function getUrlParam(key){
+  return new URLSearchParams(window.location.search).get(key);
+}
+
+function applyUrlParams(){
+  var sym   = getUrlParam('symbol') || getUrlParam('s');
+  var tf    = getUrlParam('tf')     || getUrlParam('t');
+  var exch  = getUrlParam('exch')   || getUrlParam('exchange');
+  var theme = getUrlParam('theme');
+  var wait  = getUrlParam('wait');
+
+  if(sym){
+    document.getElementById('sym').value = sym.toUpperCase();
+  }
+  if(tf){
+    // Reset all chips first, then activate only requested TFs
+    activeTFs.clear();
+    var requested = tf.toUpperCase().split(',').map(function(x){ return x.trim(); });
+    // Normalize: 1H->60, 4H->240 etc
+    var normMap = {'1M':'1','5M':'5','15M':'15','30M':'30','1H':'60','4H':'240','1D':'D','1W':'W'};
+    requested.forEach(function(t){
+      var norm = normMap[t] || t;
+      activeTFs.add(norm);
+    });
+    document.querySelectorAll('.tf').forEach(function(b){
+      b.classList.toggle('on', activeTFs.has(b.dataset.tf));
+    });
+  }
+  if(exch){
+    var sel = document.getElementById('exch');
+    for(var i = 0; i < sel.options.length; i++){
+      if(sel.options[i].value.toUpperCase() === exch.toUpperCase()){
+        sel.selectedIndex = i; break;
+      }
+    }
+  }
+  if(theme){
+    document.querySelectorAll('.th-btn').forEach(function(b){
+      b.classList.toggle('on', b.dataset.theme === theme.toLowerCase());
+    });
+    activeTheme = theme.toLowerCase();
+  }
+  if(wait){
+    var w = parseInt(wait);
+    if(!isNaN(w)) document.getElementById('wait').value = Math.min(45, Math.max(8, w));
+  }
+  // Return true if we should auto-trigger (auto=1 or symbol was provided via URL)
+  var autoParam = getUrlParam('auto');
+  return sym && (autoParam === '1' || autoParam === null);
+}
+
+/* ════════════════════════════════════════════
    INIT
 ════════════════════════════════════════════ */
 (function init(){
@@ -527,7 +582,19 @@ function tfLbl(tf){ return TF_LBL[tf] || tf; }
     symEl.setSelectionRange(p,p);
   });
 
-  if(!S.token || !S.repo) setTimeout(openCfg, 500);
+  // Apply URL params — auto-trigger if ?symbol= is present (and auto != 0)
+  var shouldAuto = applyUrlParams();
+  if(shouldAuto){
+    if(!S.token || !S.repo){
+      // Need config first — open modal then auto-trigger after save
+      openCfg();
+    } else {
+      // Small delay so page paints before we start
+      setTimeout(takeShot, 600);
+    }
+  } else {
+    if(!S.token || !S.repo) setTimeout(openCfg, 500);
+  }
 })();
 
 /* ════════════════════════════════════════════
