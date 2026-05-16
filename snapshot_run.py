@@ -40,7 +40,7 @@ def build_url(sym, exch, tf, theme):
     prefix = f"{exch}:{sym}" if exch else sym
     ts     = int(time.time())
     return (
-        f"https://www.tradingview.com/chart/new/"
+        f"https://www.tradingview.com/chart/"
         f"?symbol={prefix}&interval={iv}"
         f"&theme={theme}&style=1&save_image=false&_t={ts}"
     )
