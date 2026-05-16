@@ -5,17 +5,19 @@ KEY FIX:
   - Use /chart/new/ URL path which creates a FRESH chart ignoring saved layouts
   - Verify symbol via DOM innerText before screenshotting
   - dismiss_all() called before every screenshot
+  - Read INPUT_RUN_TOKEN so manifest.json carries it for STATUS JSON generation
 """
 import os, json, sys, time
 from pathlib import Path
 from datetime import datetime
 
-symbol    = os.environ.get("INPUT_SYMBOL",     "AAPL").strip().upper()
-exchange  = os.environ.get("INPUT_EXCHANGE",   "").strip().upper()
-tfs_raw   = os.environ.get("INPUT_TIMEFRAMES", "60,240,D,W").strip()
-wait_sec  = int(os.environ.get("INPUT_WAIT_SEC", "18"))
-theme     = os.environ.get("INPUT_THEME",      "dark")
-tv_session= os.environ.get("TV_SESSION_JSON",  "")
+symbol     = os.environ.get("INPUT_SYMBOL",     "AAPL").strip().upper()
+exchange   = os.environ.get("INPUT_EXCHANGE",   "").strip().upper()
+tfs_raw    = os.environ.get("INPUT_TIMEFRAMES", "60,240,D,W").strip()
+wait_sec   = int(os.environ.get("INPUT_WAIT_SEC", "18"))
+theme      = os.environ.get("INPUT_THEME",      "dark")
+tv_session = os.environ.get("TV_SESSION_JSON",  "")
+run_token  = os.environ.get("INPUT_RUN_TOKEN",  "").strip()
 
 timeframes = [t.strip() for t in tfs_raw.split(",") if t.strip()]
 
@@ -23,6 +25,7 @@ print(f"Symbol     : {symbol}")
 print(f"Exchange   : {exchange or 'auto'}")
 print(f"Timeframes : {timeframes}")
 print(f"Wait sec   : {wait_sec}")
+print(f"Run token  : {run_token or '(none)'}")
 print(f"Session    : {'present' if tv_session else 'MISSING'}")
 
 TF_MAP = {
@@ -32,6 +35,7 @@ TF_MAP = {
     "D":"D","d":"D","1D":"D","W":"W","w":"W","1W":"W",
 }
 TF_LABEL = {"1":"1M","5":"5M","15":"15M","30":"30M","60":"1H","240":"4H","D":"D","W":"W"}
+
 
 def build_url(sym, exch, tf, theme):
     """
@@ -52,18 +56,21 @@ def build_url(sym, exch, tf, theme):
         f"&_t={ts}"
     )
 
+
 out_dir = Path("snapshots")
 out_dir.mkdir(exist_ok=True)
+
 
 def parse_session(sj):
     if not sj or not sj.strip():
         return [], []
     try:
         d = json.loads(sj)
-        return d.get("cookies",[]), d.get("origins",[])
+        return d.get("cookies", []), d.get("origins", [])
     except Exception as e:
         print(f"  session parse error: {e}")
         return [], []
+
 
 def make_ls_script(origins):
     if not origins:
@@ -77,6 +84,7 @@ def make_ls_script(origins):
         "try{localStorage.setItem(i.name,i.value);}catch(e){}"
         "});});})();"
     )
+
 
 def dismiss_all(page, label=""):
     """Press Escape + click all close buttons to remove any open dialogs."""
@@ -106,6 +114,7 @@ def dismiss_all(page, label=""):
     if count:
         print(f"  [{label}] dismissed {count} dialog(s)")
 
+
 def wait_spinner(page, max_sec=20):
     for _ in range(max_sec * 2):
         try:
@@ -116,24 +125,23 @@ def wait_spinner(page, max_sec=20):
             return
         page.wait_for_timeout(500)
 
+
 def wait_chart(page, max_sec=25):
     try:
-        page.wait_for_selector('div[class*="chart-container"]', timeout=max_sec*1000)
+        page.wait_for_selector('div[class*="chart-container"]', timeout=max_sec * 1000)
     except Exception:
         print("  chart-container timeout")
     wait_spinner(page, 15)
 
+
 def read_symbol_from_dom(page):
     """Read the currently displayed symbol from TradingView DOM."""
-    # These selectors cover TV's various UI versions
     SELS = [
-        # Top bar symbol display
         '[data-name="legend-series-item"] div[class*="mainTitle"]',
         'div[class*="symbolInfo"] div[class*="symbol"]',
         'div[class*="symbolTitle"]',
         'div[class*="symbol-title"]',
         '[class*="titleWrapper"] [class*="title"]',
-        # The toolbar input
         'div[class*="tickerInput"]',
         '[class*="symbolInput"]',
     ]
@@ -149,11 +157,11 @@ def read_symbol_from_dom(page):
     # Fallback: extract from page title
     try:
         title = page.title()
-        # TV title format: "EXCHANGE:SYMBOL — interval | TradingView"
         part = title.split("—")[0].strip().split("·")[0].strip()
         return part.upper()
     except Exception:
         return ""
+
 
 def verify_symbol(page, sym, label):
     dom_sym = read_symbol_from_dom(page)
@@ -161,12 +169,13 @@ def verify_symbol(page, sym, label):
     print(f"  [{label}] DOM symbol: {dom_sym!r}  expected={sym}  match={match}")
     return match
 
+
 # ─────────────────────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────────────────────
 from playwright.sync_api import sync_playwright
 
-results   = []
+results = []
 launch_args = [
     "--window-size=1920,1080",
     "--disable-notifications",
@@ -178,7 +187,6 @@ launch_args = [
     "--disable-setuid-sandbox",
     "--disk-cache-size=0",
     "--media-cache-size=0",
-    # Disable saved sessions / restore
     "--no-session-restore",
     "--disable-session-crashed-bubble",
 ]
@@ -212,7 +220,6 @@ with sync_playwright() as pw:
         tf_lbl   = TF_LABEL.get(tf_key, tf_key)
         out_path = out_dir / f"{symbol}_{tf_lbl}.png"
 
-        # /chart/new/ forces fresh chart with symbol from URL
         url = build_url(symbol, exchange, tf_key, theme)
 
         print(f"\n{'─'*55}")
@@ -225,7 +232,6 @@ with sync_playwright() as pw:
             page.wait_for_timeout(2000)
             dismiss_all(page, tf_lbl)
 
-            # Verify symbol loaded correctly
             ok = verify_symbol(page, symbol, tf_lbl)
             if not ok:
                 print(f"  [{tf_lbl}] Symbol mismatch on /chart/new/ — waiting longer")
@@ -235,40 +241,57 @@ with sync_playwright() as pw:
                 if not ok:
                     print(f"  [{tf_lbl}] WARNING: symbol still wrong — saving anyway")
 
-            # Extra settle for indicators
             extra = max(0, wait_sec - 12)
             if extra > 0:
                 page.wait_for_timeout(extra * 1000)
 
-            # Final dismiss before screenshot
             dismiss_all(page, tf_lbl)
             page.wait_for_timeout(500)
 
             img_bytes = page.screenshot(full_page=False)
             out_path.write_bytes(img_bytes)
             print(f"  Saved: {out_path} ({len(img_bytes)//1024} KB)")
-            results.append({"tf":tf_key,"label":tf_lbl,"path":str(out_path),"success":True,"verified":ok})
+            results.append({
+                "tf": tf_key,
+                "label": tf_lbl,
+                "path": str(out_path),
+                "success": True,
+                "verified": ok,
+            })
 
         except Exception as e:
             print(f"  ERROR [{tf_lbl}]: {e}")
-            results.append({"tf":tf_key,"label":tf_lbl,"path":"","success":False,"error":str(e)})
+            results.append({
+                "tf": tf_key,
+                "label": tf_lbl,
+                "path": "",
+                "success": False,
+                "error": str(e),
+            })
 
     context.close()
     browser.close()
     print("\n=== Browser closed ===")
 
 manifest = {
-    "symbol":symbol,"exchange":exchange,"timeframes":timeframes,
-    "theme":theme,"timestamp":datetime.utcnow().isoformat()+"Z","results":results,
+    "symbol": symbol,
+    "exchange": exchange,
+    "timeframes": timeframes,
+    "theme": theme,
+    "run_token": run_token,
+    "timestamp": datetime.utcnow().isoformat() + "Z",
+    "results": results,
 }
-(out_dir/"manifest.json").write_text(
-    json.dumps(manifest,indent=2,ensure_ascii=False),encoding="utf-8")
+(out_dir / "manifest.json").write_text(
+    json.dumps(manifest, indent=2, ensure_ascii=False),
+    encoding="utf-8",
+)
 
-ok   = sum(1 for r in results if r["success"])
-fail = len(results)-ok
-print(f"\n{'='*55}\nDONE: {ok}/{len(results)} OK | {fail} failed")
+ok_count   = sum(1 for r in results if r["success"])
+fail_count = len(results) - ok_count
+print(f"\n{'='*55}\nDONE: {ok_count}/{len(results)} OK | {fail_count} failed")
 for r in results:
-    vfy = "(unverified)" if not r.get("verified",True) else ""
+    vfy = "(unverified)" if not r.get("verified", True) else ""
     print(f"  {'OK' if r['success'] else 'ERR'}  {symbol}_{r['label']}  {vfy}")
 
-sys.exit(0 if fail==0 else 1)
+sys.exit(0 if fail_count == 0 else 1)
