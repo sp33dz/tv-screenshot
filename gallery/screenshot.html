@@ -247,7 +247,7 @@ body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
 </div>
 
 <div id="strip">
-  <div class="s-dot" id="sdot"></div>
+  <div id="sdot" class="s-dot"></div>
   <div id="s-msg">พร้อมใช้งาน — กรอกชื่อหุ้น เลือก TF แล้วกด <span>Take Screenshot</span></div>
   <div id="elapsed"></div>
   <div id="prog-wrap">
@@ -333,7 +333,7 @@ var busy        = false;
 var timerRef    = null;
 var elapsedSec  = 0;
 var objUrls     = [];
-var _triggerTime = 0;
+var _currentRunId = null;
 
 var TF_LBL = {'1':'1M','5':'5M','15':'15M','30':'30M','60':'1H','240':'4H','D':'D','W':'W'};
 function tfLbl(tf){ return TF_LBL[tf] || tf; }
@@ -441,14 +441,15 @@ async function takeShot(){
   setProgress(4);
 
   try{
-    _triggerTime = Date.now();
+    _currentRunId = null;
+    var triggerTime = Date.now();
     await triggerWorkflow(symbol, exch, tfs, waitSec);
     setStatus('run','⏳ รอ run เริ่มต้น...');
-    await sleep(3500);
     setProgress(10);
 
-    var runId = await getRunId(symbol);
+    var runId = await findMyRunId(symbol, triggerTime);
     if(!runId) throw new Error('ไม่พบ run ID — ตรวจสอบ workflow name และ branch');
+    _currentRunId = runId;
     setStatus('run','⏳ Run <span>#' + runId + '</span> กำลังรัน...');
 
     await pollRun(runId);
@@ -488,45 +489,43 @@ async function triggerWorkflow(symbol, exch, tfs, waitSec){
   var r = await fetch(url, { method:'POST', headers:Object.assign({'Content-Type':'application/json'},ghHeaders()), body:body });
   if(r.status !== 204 && r.status !== 200){ var t = await r.text(); throw new Error('Trigger failed '+r.status+': '+t.slice(0,200)); }
 }
-async function getRunId(symbol){
-  // wfName: "snapshot.yml" -> "snapshot"
+
+async function findMyRunId(symbol, triggerTime){
   var wfName = S.wf.replace(/\.ya?ml$/i,'').toLowerCase();
-  // Allow 20 s slack: GitHub may register the run slightly before our JS clock
-  var deadline = _triggerTime - 20000;
-  for(var i = 0; i < 20; i++){
+  var deadline = triggerTime - 15000; // 15s slack
+  
+  for(var i = 0; i < 25; i++){
     await sleep(3000);
-    var r = await fetch(
-      'https://api.github.com/repos/'+S.repo+'/actions/runs?per_page=20&event=workflow_dispatch',
-      { headers:ghHeaders() }
-    );
-    if(!r.ok){ console.warn('[Snapshot] runs list HTTP '+r.status); continue; }
+    var r = await fetch('https://api.github.com/repos/'+S.repo+'/actions/runs?per_page=15&event=workflow_dispatch', { headers:ghHeaders() });
+    if(!r.ok) continue;
     var d = await r.json();
-    if(!d.workflow_runs || d.workflow_runs.length === 0) continue;
+    if(!d.workflow_runs) continue;
+    
     var candidates = d.workflow_runs.filter(function(x){
-      // 1. Must belong to our workflow file (path match, not display_title)
-      var matchWf   = (x.path||'').toLowerCase().includes(wfName);
-      // 2. Must have been created AFTER we pressed Trigger (with 20 s slack)
+      var matchWf = (x.path||'').toLowerCase().includes(wfName);
       var createdMs = new Date(x.created_at).getTime();
-      var fresh     = createdMs >= deadline;
-      // 3. Skip runs that were cancelled before even queuing
-      var alive     = (x.status !== 'cancelled');
-      return matchWf && fresh && alive;
+      return matchWf && createdMs >= deadline && x.status !== 'cancelled';
     });
+
     if(candidates.length > 0){
-      // Pick the newest dispatch (our run is always the most recent)
-      candidates.sort(function(a,b){ return new Date(b.created_at) - new Date(a.created_at); });
-      var found = candidates[0];
-      console.log('[Snapshot] matched run #'+found.id
-        +' status='+found.status+' path='+found.path+' created='+found.created_at);
+      // เนื่องจาก GitHub Actions อาจรันพร้อมกันหลายตัว เราต้องพยายามหาตัวที่ตรงกับ symbol ของเราที่สุด
+      // โดยตรวจสอบจาก name หรือ display_title ถ้ามี
+      var bestMatch = candidates.find(function(x){
+        var title = (x.display_title || x.name || '').toUpperCase();
+        return title.includes(symbol.toUpperCase());
+      });
+      
+      // ถ้าหาจากชื่อไม่เจอ (บางที GitHub ยังไม่อัปเดตชื่อ) ให้เอาตัวที่ใหม่ที่สุดที่เข้าข่าย
+      var found = bestMatch || candidates.sort(function(a,b){ return new Date(b.created_at) - new Date(a.created_at); })[0];
+      console.log('[Snapshot] Found run #'+found.id+' for '+symbol);
       return found.id;
     }
-    console.log('[Snapshot] poll '+(i+1)+'/20: no match yet'
-      +' (wfName="'+wfName+'" deadline='+new Date(deadline).toISOString()+')');
   }
   return null;
 }
+
 async function pollRun(runId){
-  var MAX=600, POLL=8, elapsed=0;
+  var MAX=600, POLL=6, elapsed=0;
   while(elapsed < MAX){
     await sleep(POLL*1000); elapsed += POLL;
     var r = await fetch('https://api.github.com/repos/'+S.repo+'/actions/runs/'+runId, { headers:ghHeaders() });
@@ -548,6 +547,7 @@ async function getArtifact(runId, symbol){
   var d = await r.json();
   if(!d.artifacts || d.artifacts.length === 0) return null;
   var sym = symbol.toLowerCase();
+  // พยายามหา artifact ที่มีชื่อ symbol ของเรา (ตั้งชื่อไว้ใน snapshot.yml)
   return d.artifacts.find(function(x){ return x.name.toLowerCase().includes(sym); }) || d.artifacts[0];
 }
 
