@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
 snapshot_run.py  —  On-demand TradingView screenshot
-Strategy: Use TV's chart widget URL with explicit symbol/interval,
-then verify symbol from DOM (not page title) and dismiss all dialogs robustly.
+KEY FIX:
+  - Use /chart/new/ URL path which creates a FRESH chart ignoring saved layouts
+  - Verify symbol via DOM innerText before screenshotting
+  - dismiss_all() called before every screenshot
 """
 import os, json, sys, time
 from pathlib import Path
@@ -32,13 +34,22 @@ TF_MAP = {
 TF_LABEL = {"1":"1M","5":"5M","15":"15M","30":"30M","60":"1H","240":"4H","D":"D","W":"W"}
 
 def build_url(sym, exch, tf, theme):
+    """
+    Use /chart/new/ to force a fresh chart that reads symbol from URL.
+    /chart/ reloads a saved layout (ignores ?symbol=).
+    /chart/new/ always starts fresh with the given symbol.
+    """
     iv     = TF_MAP.get(tf, tf)
     prefix = f"{exch}:{sym}" if exch else sym
     ts     = int(time.time())
     return (
-        f"https://www.tradingview.com/chart/"
-        f"?symbol={prefix}&interval={iv}"
-        f"&theme={theme}&style=1&save_image=false&_t={ts}"
+        f"https://www.tradingview.com/chart/new/"
+        f"?symbol={prefix}"
+        f"&interval={iv}"
+        f"&theme={theme}"
+        f"&style=1"
+        f"&save_image=false"
+        f"&_t={ts}"
     )
 
 out_dir = Path("snapshots")
@@ -67,30 +78,23 @@ def make_ls_script(origins):
         "});});})();"
     )
 
-# ─────────────────────────────────────────────────────────────
-# Dismiss ALL open dialogs/popups robustly
-# ─────────────────────────────────────────────────────────────
 def dismiss_all(page, label=""):
-    count = 0
-    # 1. Press Escape 3 times
+    """Press Escape + click all close buttons to remove any open dialogs."""
     for _ in range(3):
         try:
             page.keyboard.press("Escape")
-            page.wait_for_timeout(250)
+            page.wait_for_timeout(200)
         except Exception:
             pass
-    # 2. Click all visible close buttons
-    CLOSE_SELS = [
+    count = 0
+    for sel in [
         'button[data-name="close"]',
         '[data-name="close-button"]',
         'button[aria-label="Close"]',
         'button[aria-label="close"]',
         '[class*="closeButton"]',
         '[class*="close-button"]',
-        '[class*="CloseButton"]',
-        'div[class*="dialog"] button',
-    ]
-    for sel in CLOSE_SELS:
+    ]:
         try:
             for btn in page.query_selector_all(sel):
                 if btn.is_visible():
@@ -100,8 +104,7 @@ def dismiss_all(page, label=""):
         except Exception:
             pass
     if count:
-        print(f"  [{label}] closed {count} dialog(s)")
-    return count
+        print(f"  [{label}] dismissed {count} dialog(s)")
 
 def wait_spinner(page, max_sec=20):
     for _ in range(max_sec * 2):
@@ -118,171 +121,52 @@ def wait_chart(page, max_sec=25):
         page.wait_for_selector('div[class*="chart-container"]', timeout=max_sec*1000)
     except Exception:
         print("  chart-container timeout")
-    wait_spinner(page, max_sec=15)
+    wait_spinner(page, 15)
 
-# ─────────────────────────────────────────────────────────────
-# Verify correct symbol loaded by reading DOM — more reliable than title
-# ─────────────────────────────────────────────────────────────
-def verify_symbol_dom(page, sym, label):
-    """Read the symbol shown in TV's chart header via DOM."""
-    # Try several selectors TV uses for the current symbol display
-    SYMBOL_SELS = [
-        # Top bar: the symbol name text
+def read_symbol_from_dom(page):
+    """Read the currently displayed symbol from TradingView DOM."""
+    # These selectors cover TV's various UI versions
+    SELS = [
+        # Top bar symbol display
+        '[data-name="legend-series-item"] div[class*="mainTitle"]',
         'div[class*="symbolInfo"] div[class*="symbol"]',
-        'div[class*="titleWrapper"] div[class*="title"]',
-        '[data-name="legend-series-item"] div[class*="title"]',
-        # The input that shows current symbol
+        'div[class*="symbolTitle"]',
+        'div[class*="symbol-title"]',
+        '[class*="titleWrapper"] [class*="title"]',
+        # The toolbar input
         'div[class*="tickerInput"]',
-        'div[class*="symbolInput"]',
-        # Fallback: read page title
+        '[class*="symbolInput"]',
     ]
-    for sel in SYMBOL_SELS:
+    for sel in SELS:
         try:
             el = page.query_selector(sel)
             if el:
-                text = el.inner_text().strip().upper()
-                if text:
-                    found = sym.upper() in text
-                    print(f"  [{label}] DOM symbol text: {text!r}  match={found}")
-                    return found
+                txt = el.inner_text().strip().upper()
+                if txt and len(txt) >= 1:
+                    return txt
         except Exception:
             pass
-
-    # Fallback: page title
+    # Fallback: extract from page title
     try:
-        title = page.title().upper()
-        found = sym.upper() in title
-        print(f"  [{label}] Title fallback: {title!r}  match={found}")
-        return found
+        title = page.title()
+        # TV title format: "EXCHANGE:SYMBOL — interval | TradingView"
+        part = title.split("—")[0].strip().split("·")[0].strip()
+        return part.upper()
     except Exception:
-        return False
+        return ""
 
-# ─────────────────────────────────────────────────────────────
-# Force correct symbol via TV symbol search toolbar button
-# ─────────────────────────────────────────────────────────────
-def force_symbol(page, sym, exch, label):
-    query = f"{exch}:{sym}" if exch else sym
-    print(f"  [{label}] Forcing symbol: {query}")
-
-    # Step 1: dismiss anything open
-    dismiss_all(page, label)
-    page.wait_for_timeout(400)
-
-    # Step 2: click the symbol search button in the toolbar
-    # TradingView's header toolbar has a dedicated symbol search button
-    opened = False
-    TOOLBAR_SELS = [
-        '#header-toolbar-symbol-search',
-        '[id="header-toolbar-symbol-search"]',
-        '[data-name="header-toolbar-symbol-search"]',
-        'button[id*="symbol-search"]',
-        # The clickable symbol name text in the top-left
-        'div[class*="chart-widget"] div[class*="title"] span',
-        'div[class*="mainTitle"]',
-        'div[class*="symbolTitle"]',
-        'div[class*="symbol-title"]',
-        'div[class*="title-TVBgYZEO"]',     # TV class (may change)
-        # The "W" workspace button area — skip
-        # Broader fallback: any element whose text contains current symbol
-    ]
-    for sel in TOOLBAR_SELS:
-        try:
-            el = page.query_selector(sel)
-            if el and el.is_visible():
-                el.click(timeout=1500)
-                page.wait_for_timeout(800)
-                # Check if symbol search input appeared
-                inp = (page.query_selector('input[data-role="search"]') or
-                       page.query_selector('input[placeholder*="earch"]') or
-                       page.query_selector('div[class*="symbolSearch"] input') or
-                       page.query_selector('div[class*="search-"] input'))
-                if inp and inp.is_visible():
-                    opened = True
-                    print(f"  [{label}] Symbol search opened via: {sel}")
-                    break
-                else:
-                    dismiss_all(page, label)
-        except Exception:
-            pass
-
-    # Step 3: if still not opened, try JS to click toolbar button
-    if not opened:
-        print(f"  [{label}] Trying JS click on symbol search button")
-        try:
-            page.evaluate("""
-                (function(){
-                    var sels = [
-                        '#header-toolbar-symbol-search',
-                        '[data-name="header-toolbar-symbol-search"]',
-                        '[class*="mainTitle"]',
-                        '[class*="symbolTitle"]',
-                        '[class*="symbol-title"]',
-                    ];
-                    for(var i=0;i<sels.length;i++){
-                        var el = document.querySelector(sels[i]);
-                        if(el){ el.click(); return sels[i]; }
-                    }
-                    return null;
-                })()
-            """)
-            page.wait_for_timeout(900)
-            inp = (page.query_selector('input[data-role="search"]') or
-                   page.query_selector('input[placeholder*="earch"]'))
-            if inp and inp.is_visible():
-                opened = True
-                print(f"  [{label}] Symbol search opened via JS")
-        except Exception as e:
-            print(f"  [{label}] JS click error: {e}")
-
-    # Step 4: type the symbol
-    if opened:
-        try:
-            page.keyboard.press("Control+a")
-            page.wait_for_timeout(100)
-            page.keyboard.type(query, delay=80)
-            page.wait_for_timeout(1200)
-        except Exception as e:
-            print(f"  [{label}] Type error: {e}")
-    else:
-        print(f"  [{label}] Could not open symbol search — trying keyboard type anyway")
-        try:
-            page.keyboard.type(query, delay=80)
-            page.wait_for_timeout(1200)
-        except Exception:
-            pass
-
-    # Step 5: wait for dropdown results then Enter
-    for sel in ['div[class*="listItem"]','div[class*="search-item"]',
-                'div[data-symbol-item]','li[class*="item-"]',
-                'div[class*="symbolSearchResult"]']:
-        try:
-            page.wait_for_selector(sel, timeout=4000)
-            break
-        except Exception:
-            pass
-
-    try:
-        page.keyboard.press("Enter")
-        page.wait_for_timeout(800)
-    except Exception:
-        pass
-
-    # Step 6: wait for chart reload
-    page.wait_for_timeout(3000)
-    wait_spinner(page, max_sec=15)
-    dismiss_all(page, label)
-    page.wait_for_timeout(800)
-
-    # Step 7: verify
-    return verify_symbol_dom(page, sym, label)
-
+def verify_symbol(page, sym, label):
+    dom_sym = read_symbol_from_dom(page)
+    match = sym.upper() in dom_sym
+    print(f"  [{label}] DOM symbol: {dom_sym!r}  expected={sym}  match={match}")
+    return match
 
 # ─────────────────────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────────────────────
 from playwright.sync_api import sync_playwright
 
-results = []
+results   = []
 launch_args = [
     "--window-size=1920,1080",
     "--disable-notifications",
@@ -294,6 +178,9 @@ launch_args = [
     "--disable-setuid-sandbox",
     "--disk-cache-size=0",
     "--media-cache-size=0",
+    # Disable saved sessions / restore
+    "--no-session-restore",
+    "--disable-session-crashed-bubble",
 ]
 
 cookies, storage_origins = parse_session(tv_session)
@@ -324,40 +211,43 @@ with sync_playwright() as pw:
     for idx, tf_key in enumerate(timeframes):
         tf_lbl   = TF_LABEL.get(tf_key, tf_key)
         out_path = out_dir / f"{symbol}_{tf_lbl}.png"
-        url      = build_url(symbol, exchange, tf_key, theme)
+
+        # /chart/new/ forces fresh chart with symbol from URL
+        url = build_url(symbol, exchange, tf_key, theme)
 
         print(f"\n{'─'*55}")
         print(f"  {symbol} [{tf_lbl}]  ({idx+1}/{len(timeframes)})")
+        print(f"  URL: {url}")
 
         try:
             page.goto(url, timeout=40000, wait_until="domcontentloaded")
             wait_chart(page, max_sec=25)
-            page.wait_for_timeout(1500)
+            page.wait_for_timeout(2000)
             dismiss_all(page, tf_lbl)
 
-            # Check symbol first — if wrong, force it
-            ok = verify_symbol_dom(page, symbol, tf_lbl)
+            # Verify symbol loaded correctly
+            ok = verify_symbol(page, symbol, tf_lbl)
             if not ok:
-                print(f"  [{tf_lbl}] Symbol mismatch — forcing...")
-                ok = force_symbol(page, symbol, exchange, tf_lbl)
+                print(f"  [{tf_lbl}] Symbol mismatch on /chart/new/ — waiting longer")
+                page.wait_for_timeout(3000)
+                dismiss_all(page, tf_lbl)
+                ok = verify_symbol(page, symbol, tf_lbl)
                 if not ok:
-                    print(f"  [{tf_lbl}] WARNING: could not verify symbol")
-            else:
-                print(f"  [{tf_lbl}] Symbol already correct — skipping force")
+                    print(f"  [{tf_lbl}] WARNING: symbol still wrong — saving anyway")
 
-            # Extra wait for indicators to settle
+            # Extra settle for indicators
             extra = max(0, wait_sec - 12)
             if extra > 0:
                 page.wait_for_timeout(extra * 1000)
 
-            # Final dismiss
+            # Final dismiss before screenshot
             dismiss_all(page, tf_lbl)
             page.wait_for_timeout(500)
 
             img_bytes = page.screenshot(full_page=False)
             out_path.write_bytes(img_bytes)
             print(f"  Saved: {out_path} ({len(img_bytes)//1024} KB)")
-            results.append({"tf":tf_key,"label":tf_lbl,"path":str(out_path),"success":True})
+            results.append({"tf":tf_key,"label":tf_lbl,"path":str(out_path),"success":True,"verified":ok})
 
         except Exception as e:
             print(f"  ERROR [{tf_lbl}]: {e}")
@@ -378,6 +268,7 @@ ok   = sum(1 for r in results if r["success"])
 fail = len(results)-ok
 print(f"\n{'='*55}\nDONE: {ok}/{len(results)} OK | {fail} failed")
 for r in results:
-    print(f"  {'OK' if r['success'] else 'ERR'}  {symbol}_{r['label']}  {r.get('path') or r.get('error','')}")
+    vfy = "(unverified)" if not r.get("verified",True) else ""
+    print(f"  {'OK' if r['success'] else 'ERR'}  {symbol}_{r['label']}  {vfy}")
 
 sys.exit(0 if fail==0 else 1)
