@@ -117,31 +117,68 @@ def wait_chart(page, max_sec=25):
     wait_spinner(page, 15)
 
 def read_symbol_from_dom(page):
-    """Read the currently displayed symbol from TradingView DOM."""
-    SELS = [
+    """Read the currently displayed TICKER from TradingView DOM.
+
+    Priority order: ticker-specific selectors first, then page title as fallback.
+    TradingView shows the ticker (e.g. 'AIXI') separately from the company name
+    ('XIAO-I CORPORATION') — we must target ticker elements, not company-name ones.
+    """
+    # Tier 1: Elements that reliably hold the TICKER (short symbol), not company name
+    TICKER_SELS = [
+        # Legend item ticker — most reliable
+        '[data-name="legend-series-item"] [class*="title"]',
+        # Chart header ticker area
+        '[class*="priceSources"] [class*="symbol"]',
+        '[class*="symbolInput"] input',
+        '[data-name="chart-toolbar-symbol-search"] input',
+        # Left toolbar / header symbol display
+        'div[class*="tickerInput"]',
+        '[class*="tickerContainer"] [class*="ticker"]',
+        '[class*="symbolChip"]',
+        # Generic but higher-priority than company name
+        'div[class*="symbolInfo"] [class*="ticker"]',
+        'div[class*="symbolInfo"] [class*="symbol"]:first-child',
+    ]
+    for sel in TICKER_SELS:
+        try:
+            el = page.query_selector(sel)
+            if el:
+                txt = (el.get_attribute("value") or el.inner_text() or "").strip().upper()
+                # Ticker is short (1–10 chars) and has no spaces
+                if txt and 1 <= len(txt) <= 10 and " " not in txt:
+                    return txt
+        except Exception:
+            pass
+
+    # Tier 2: page title — format is usually "TICKER — TradingView" or "TICKER · ..."
+    try:
+        title = page.title()
+        # Try the first token before any separator
+        for sep in [" — ", " - ", " · ", "·", "—"]:
+            if sep in title:
+                part = title.split(sep)[0].strip().upper()
+                if part and 1 <= len(part) <= 10 and " " not in part:
+                    return part
+    except Exception:
+        pass
+
+    # Tier 3: fallback — return whatever the first legend title says (may be company name)
+    FALLBACK_SELS = [
         '[data-name="legend-series-item"] div[class*="mainTitle"]',
-        'div[class*="symbolInfo"] div[class*="symbol"]',
         'div[class*="symbolTitle"]',
         'div[class*="symbol-title"]',
         '[class*="titleWrapper"] [class*="title"]',
-        'div[class*="tickerInput"]',
-        '[class*="symbolInput"]',
     ]
-    for sel in SELS:
+    for sel in FALLBACK_SELS:
         try:
             el = page.query_selector(sel)
             if el:
                 txt = el.inner_text().strip().upper()
-                if txt and len(txt) >= 1:
+                if txt:
                     return txt
         except Exception:
             pass
-    try:
-        title = page.title()
-        part = title.split("—")[0].strip().split("·")[0].strip()
-        return part.upper()
-    except Exception:
-        return ""
+    return ""
 
 def verify_symbol(page, sym, label):
     dom_sym = read_symbol_from_dom(page)
