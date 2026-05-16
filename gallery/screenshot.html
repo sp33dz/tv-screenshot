@@ -491,14 +491,11 @@ async function triggerWorkflow(symbol, exch, tfs, waitSec){
 async function getRunId(symbol){
   var wfName   = S.wf.replace(/\.ya?ml$/i,'').toLowerCase();
   var symUpper = symbol.toUpperCase();
-  var symLow   = symbol.toLowerCase();
-  // Allow 20 s slack: GitHub may register the run slightly before our JS clock
-  var deadline = _triggerTime - 20000;
+  var deadline = _triggerTime - 20000;   // 20 s grace for GitHub clock skew
 
-  for(var i = 0; i < 20; i++){
+  for(var i = 0; i < 25; i++){
     await sleep(3000);
 
-    // Step 1: get recent workflow_dispatch runs (per_page=30 to cover concurrent tabs)
     var r = await fetch(
       'https://api.github.com/repos/'+S.repo+'/actions/runs?per_page=30&event=workflow_dispatch',
       { headers:ghHeaders() }
@@ -507,34 +504,40 @@ async function getRunId(symbol){
     var d = await r.json();
     if(!d.workflow_runs || d.workflow_runs.length === 0) continue;
 
-    // Step 2: narrow to our workflow + fresh + alive
+    // Narrow to: correct workflow file + created after trigger - 20 s + not cancelled
     var pool = d.workflow_runs.filter(function(x){
       var matchWf   = (x.path||'').toLowerCase().includes(wfName);
       var createdMs = new Date(x.created_at).getTime();
-      var fresh     = createdMs >= deadline;
-      var alive     = x.status !== 'cancelled';
-      return matchWf && fresh && alive;
+      return matchWf && createdMs >= deadline && x.status !== 'cancelled';
     });
-    if(pool.length === 0){
-      console.log('[Snapshot] poll '+(i+1)+'/20: no fresh pool yet');
-      continue;
-    }
-    console.log('[Snapshot] pool size='+pool.length+' ids='+pool.map(function(x){return x.id;}).join(','));
+    console.log('[Snapshot] poll '+(i+1)+': pool='+pool.length
+      +' titles='+pool.map(function(x){return '"'+(x.display_title||x.name||'')+'"';}).join(','));
+    if(pool.length === 0) continue;
 
-    // Step 3: Quick check — display_title or name contains symbol (fast, no extra fetch)
-    // GitHub sometimes puts the job name "Snapshot AIXI [60,240,D,W]" in display_title
+    // --- Method A: display_title / name contains symbol (works after run-name: fix in snapshot.yml)
+    // Must be an EXACT word-boundary match: "AIXI" must not match "AMPX"
+    // Use a pattern like " SYMBOL " or "SYMBOL [" or "SYMBOL]" to avoid partial hits
     var byTitle = pool.filter(function(x){
       var t = ((x.display_title||'')+(x.name||'')).toUpperCase();
-      return t.includes(symUpper);
+      // Check for: "SYMBOL [" or "SYMBOL]" or start/end, not just substring
+      return (
+        t.indexOf(' '+symUpper+' ') >= 0 ||
+        t.indexOf(' '+symUpper+'[') >= 0 ||
+        t.indexOf(' '+symUpper+']') >= 0 ||
+        t.indexOf('"'+symUpper+'"') >= 0 ||
+        t.startsWith(symUpper+' ') ||
+        t.startsWith(symUpper+'[')
+      );
     });
     if(byTitle.length > 0){
       byTitle.sort(function(a,b){ return new Date(b.created_at)-new Date(a.created_at); });
-      console.log('[Snapshot] matched by title: run #'+byTitle[0].id+' display_title="'+byTitle[0].display_title+'"');
+      console.log('[Snapshot] ✅ Method A match: run #'+byTitle[0].id
+        +' title="'+byTitle[0].display_title+'"');
       return byTitle[0].id;
     }
 
-    // Step 4: Fetch each candidate's full run object to read inputs.symbol
-    // (run-list API does not expose inputs; /runs/{id} does)
+    // --- Method B: fetch /runs/{id} individually to read inputs.symbol
+    //     (GitHub run-list does not expose inputs; the individual run endpoint does)
     var matched = null;
     for(var j = 0; j < pool.length; j++){
       var cand = pool[j];
@@ -543,36 +546,35 @@ async function getRunId(symbol){
           'https://api.github.com/repos/'+S.repo+'/actions/runs/'+cand.id,
           { headers:ghHeaders() }
         );
-        if(!rr.ok){ console.warn('[Snapshot] run detail HTTP '+rr.status+' for #'+cand.id); continue; }
+        if(!rr.ok) continue;
         var dd = await rr.json();
-        var inputSym = ((dd.inputs && dd.inputs.symbol) || '').toUpperCase().trim();
-        console.log('[Snapshot] run #'+cand.id+' inputs='+JSON.stringify(dd.inputs)+' display_title="'+dd.display_title+'"');
-        // Match by inputs.symbol (most reliable)
-        if(inputSym && inputSym === symUpper){
+        var inputSym  = ((dd.inputs  && dd.inputs.symbol ) || '').toUpperCase().trim();
+        var titleText = ((dd.display_title||'')+(dd.name||'')).toUpperCase();
+        console.log('[Snapshot] run #'+cand.id+' inputs.symbol="'+inputSym
+          +'" display_title="'+dd.display_title+'"');
+        if(inputSym === symUpper){
           matched = cand;
-          console.log('[Snapshot] ✅ matched by inputs.symbol: run #'+cand.id+' for '+symUpper);
+          console.log('[Snapshot] ✅ Method B match by inputs.symbol: run #'+cand.id);
           break;
         }
-        // Fallback: artifact name pattern "snapshots-SYMBOL-RUNID" may appear in display_title
-        var dt = (dd.display_title||'').toUpperCase();
-        if(!inputSym && dt.includes(symUpper)){
+        // display_title from full object (may differ from list)
+        if(!inputSym && (
+          titleText.indexOf(' '+symUpper+' ') >= 0 ||
+          titleText.indexOf(' '+symUpper+'[') >= 0 ||
+          titleText.startsWith(symUpper+' ') ||
+          titleText.startsWith(symUpper+'[')
+        )){
           matched = cand;
-          console.log('[Snapshot] ✅ matched by display_title fallback: run #'+cand.id);
+          console.log('[Snapshot] ✅ Method B match by display_title: run #'+cand.id);
           break;
         }
       }catch(e){ console.warn('[Snapshot] error fetching run #'+cand.id, e); }
     }
     if(matched) return matched.id;
 
-    // Step 5: Last resort — if ONLY 1 candidate in pool, it must be ours
-    // (only safe when concurrent tabs trigger at slightly different times)
-    if(pool.length === 1){
-      console.log('[Snapshot] ⚠️ single candidate, using run #'+pool[0].id+' for '+symUpper+' (unverified)');
-      return pool[0].id;
-    }
-
-    console.log('[Snapshot] poll '+(i+1)+'/20: no match for '+symUpper
-      +' (pool='+pool.length+' deadline='+new Date(deadline).toISOString()+')');
+    // No match yet — keep polling. Never guess or fall back to "only one candidate".
+    // Another tab's run in the pool is not our run.
+    console.log('[Snapshot] no match for '+symUpper+' yet, will retry...');
   }
   return null;
 }
@@ -596,33 +598,33 @@ async function pollRun(runId){
 }
 async function getArtifact(runId, symbol){
   var symLow = symbol.toLowerCase();
-  // Retry up to 4 times: artifact may take a few seconds to register after run completes
-  for(var attempt = 0; attempt < 4; attempt++){
+  // Retry up to 5 times: artifact may take a few seconds to register after run completes
+  for(var attempt = 0; attempt < 5; attempt++){
     if(attempt > 0) await sleep(4000);
     var r = await fetch(
       'https://api.github.com/repos/'+S.repo+'/actions/runs/'+runId+'/artifacts',
       { headers:ghHeaders() }
     );
-    if(!r.ok){ console.warn('[Snapshot] artifacts HTTP '+r.status+' attempt '+attempt); continue; }
+    if(!r.ok){ console.warn('[Snapshot] artifacts HTTP '+r.status+' attempt '+(attempt+1)); continue; }
     var d = await r.json();
     var total = (d.artifacts||[]).length;
-    console.log('[Snapshot] artifacts attempt '+(attempt+1)+': total='+total
-      +' names='+( d.artifacts||[]).map(function(a){return a.name;}).join(', '));
-    if(!d.artifacts || total === 0){ console.log('[Snapshot] no artifacts yet, retrying...'); continue; }
+    console.log('[Snapshot] artifacts attempt '+(attempt+1)+'/5: total='+total
+      +' names='+(d.artifacts||[]).map(function(a){return a.name;}).join(', '));
+    if(total === 0){ continue; }
 
-    // Strict match: name contains symbol
-    var matched = d.artifacts.find(function(x){ return x.name.toLowerCase().includes(symLow); });
+    // STRICT match only — artifact name must contain symbol
+    // Never fall back to "use the only artifact" — it may belong to another symbol's run
+    var matched = d.artifacts.find(function(x){
+      return x.name.toLowerCase().includes(symLow);
+    });
     if(matched){
-      console.log('[Snapshot] ✅ artifact matched: "'+matched.name+'" id='+matched.id);
+      console.log('[Snapshot] ✅ artifact: "'+matched.name+'" id='+matched.id);
       return matched;
     }
-    console.warn('[Snapshot] no artifact matching "'+symbol+'" among: '
-      +d.artifacts.map(function(a){return a.name;}).join(', '));
-    // If this run has exactly 1 artifact and we're already verified the runId is correct, use it
-    if(total === 1){
-      console.log('[Snapshot] ⚠️ using sole artifact: "'+d.artifacts[0].name+'" (unverified symbol match)');
-      return d.artifacts[0];
-    }
+    console.warn('[Snapshot] ⚠️ runId='+runId+' has '+total+' artifact(s) but none match "'+symbol
+      +'": '+d.artifacts.map(function(a){return a.name;}).join(', ')
+      +' — possible runId mismatch');
+    // DO NOT fall back to d.artifacts[0] — that would show wrong symbol's images
   }
   return null;
 }
