@@ -462,6 +462,11 @@ body::before{
       <label>Branch</label>
       <input id="f-branch" type="text" placeholder="main"/>
     </div>
+    <div class="fld">
+      <label>GitHub Pages URL (auto-detected จาก repo ถ้าว่าง)</label>
+      <input id="f-pages" type="text" placeholder="https://sp33dz.github.io/tv-screenshot"/>
+      <div class="hint">ใช้ poll STATUS JSON — ไม่ต้องกรอกถ้า repo ชื่อถูกต้อง</div>
+    </div>
 
     <div class="cfg-acts">
       <button class="btn btn-s" onclick="cfgClose()">ยกเลิก</button>
@@ -476,17 +481,29 @@ body::before{
 /* ════════════════════════════════════════════
    STATE
 ════════════════════════════════════════════ */
-var S = { token:'', repo:'', wf:'snapshot.yml', branch:'main' };
+var S = {
+  token:'', repo:'', wf:'snapshot.yml', branch:'main',
+  pages:''  // GitHub Pages base URL e.g. https://sp33dz.github.io/tv-screenshot
+};
 var activeTFs   = new Set(['60','240','D','W']);
 var activeTheme = 'dark';
 var lbZoomLvl   = 1;
 var busy        = false;
 var timerRef    = null;
 var elapsedSec  = 0;
-var objUrls     = []; // track blob URLs to revoke later
+var objUrls     = [];
 
 var TF_LBL = {'1':'1M','5':'5M','15':'15M','30':'30M','60':'1H','240':'4H','D':'D','W':'W'};
 function tfLbl(tf){ return TF_LBL[tf] || tf; }
+
+// Derive pages URL from repo if not set explicitly
+function getPagesUrl(){
+  if(S.pages && S.pages.trim()) return S.pages.trim().replace(/\/$/,'');
+  if(!S.repo) return '';
+  var parts = S.repo.split('/');
+  if(parts.length < 2) return '';
+  return 'https://' + parts[0] + '.github.io/' + parts[1];
+}
 
 /* ════════════════════════════════════════════
    URL PARAMS HELPER
@@ -599,62 +616,56 @@ function applyUrlParams(){
 
 /* ════════════════════════════════════════════
    MAIN FLOW
+   New architecture: POST dispatch → poll Pages JSON (no CORS issue)
 ════════════════════════════════════════════ */
 async function takeShot(){
   if(busy) return;
-
   var symbol = document.getElementById('sym').value.trim().toUpperCase();
   if(!symbol){ showToast('⚠️ กรอกชื่อหุ้นก่อน','wn'); document.getElementById('sym').focus(); return; }
   if(activeTFs.size === 0){ showToast('⚠️ เลือก TF อย่างน้อย 1 รายการ','wn'); return; }
   if(!S.token || !S.repo){ showToast('⚙️ ตั้งค่า Config ก่อน','wn'); openCfg(); return; }
 
+  var pagesUrl = getPagesUrl();
+  if(!pagesUrl){ showToast('⚙️ กรุณาตั้งค่า repo ใน Config','wn'); openCfg(); return; }
+
   var exch    = document.getElementById('exch').value;
   var waitSec = document.getElementById('wait').value || '18';
   var tfs     = Array.from(activeTFs);
+  var runToken= symbol + '_' + Date.now();
 
   setBusy(true);
   clearGrid();
   revokeObjUrls();
   startTimer();
-  setStatus('run', '🚀 Triggering workflow — <span>' + symbol + '</span> [' + tfs.map(tfLbl).join(' ') + '] ...');
+  setStatus('run','🚀 Triggering — <span>' + symbol + '</span> [' + tfs.map(tfLbl).join(' ') + '] ...');
   setProgress(4);
 
   try{
-    // Step 1: trigger
-    await triggerWorkflow(symbol, exch, tfs, waitSec);
-    setStatus('run', '⏳ รอ run เริ่มต้น...');
-    await sleep(3500);
-    setProgress(10);
+    // Trigger workflow via POST (CORS allows POST to api.github.com)
+    await triggerWorkflow(symbol, exch, tfs, waitSec, runToken);
+    setStatus('run','⏳ Workflow triggered — รอภาพจาก GitHub Pages...');
+    setProgress(8);
 
-    // Step 2: get run ID — pass symbol so we match OUR run, not another tab's
-    var runId = await getRunId(symbol);
-    if(!runId) throw new Error('ไม่พบ run ID — ตรวจสอบ workflow name และ branch');
-    setStatus('run', '⏳ Run <span>#' + runId + '</span> กำลังรัน...');
+    // Poll STATUS_{SYMBOL}.json on GitHub Pages (no CORS issue — same gh-pages domain)
+    var statusUrl = pagesUrl + '/snapshots/STATUS_' + symbol + '.json';
+    console.log('[Snapshot] Polling:', statusUrl, 'token:', runToken);
+    var result = await pollStatusJson(statusUrl, runToken);
 
-    // Step 3: poll until done
-    await pollRun(runId);
-    setProgress(82);
+    setProgress(95);
 
-    // Step 4: get artifact
-    setStatus('run', '📦 ดึง artifact...');
-    var artifact = await getArtifact(runId, symbol);
-    if(!artifact) throw new Error('ไม่พบ artifact — workflow อาจ fail');
-    setProgress(88);
-
-    // Step 5: download zip + show images
-    setStatus('run', '🖼 โหลดภาพจาก artifact...');
-    await loadArtifactImages(artifact, symbol, tfs, exch);
+    // Display images directly from Pages URLs
+    await showImagesFromStatus(result, symbol, tfs, exch);
 
     setProgress(100);
     stopTimer();
-    setStatus('ok', '✅ <span>' + symbol + '</span> — ' + tfs.map(tfLbl).join(' ') + ' — เสร็จใน ' + elapsedSec + 's');
-    showToast('✅ ' + symbol + ' screenshot สำเร็จ', 'ok');
+    setStatus('ok','✅ <span>' + symbol + '</span> — ' + tfs.map(tfLbl).join(' ') + ' — เสร็จใน ' + elapsedSec + 's');
+    showToast('✅ ' + symbol + ' สำเร็จ','ok');
 
   }catch(err){
     console.error(err);
     stopTimer();
-    setStatus('err', '❌ ' + err.message);
-    showToast('❌ ' + err.message, 'err');
+    setStatus('err','❌ ' + err.message);
+    showToast('❌ ' + err.message,'err');
   }finally{
     setBusy(false);
     setTimeout(hideProgress, 3000);
@@ -662,7 +673,7 @@ async function takeShot(){
 }
 
 /* ════════════════════════════════════════════
-   GITHUB API
+   GITHUB API — only POST (dispatch), no GET polling
 ════════════════════════════════════════════ */
 function ghHeaders(){
   return {
@@ -672,11 +683,8 @@ function ghHeaders(){
   };
 }
 
-var _triggerTime = 0; // epoch ms just before dispatch
-
-async function triggerWorkflow(symbol, exch, tfs, waitSec){
-  _triggerTime = Date.now(); // record time BEFORE triggering
-  var url = 'https://api.github.com/repos/' + S.repo + '/actions/workflows/' + S.wf + '/dispatches';
+async function triggerWorkflow(symbol, exch, tfs, waitSec, runToken){
+  var url  = 'https://api.github.com/repos/' + S.repo + '/actions/workflows/' + S.wf + '/dispatches';
   var body = JSON.stringify({
     ref: S.branch,
     inputs: {
@@ -684,125 +692,91 @@ async function triggerWorkflow(symbol, exch, tfs, waitSec){
       exchange:   exch || '',
       timeframes: tfs.join(','),
       wait_sec:   String(waitSec),
-      theme:      activeTheme
+      theme:      activeTheme,
+      run_token:  runToken
     }
   });
-  var r = await fetch(url, { method:'POST', headers: Object.assign({'Content-Type':'application/json'}, ghHeaders()), body: body });
+  var r = await fetch(url, {
+    method:'POST',
+    headers: Object.assign({'Content-Type':'application/json'}, ghHeaders()),
+    body: body
+  });
   if(r.status !== 204 && r.status !== 200){
     var t = await r.text();
-    throw new Error('Trigger failed ' + r.status + ': ' + t.slice(0, 150));
+    throw new Error('Trigger failed ' + r.status + ': ' + t.slice(0,200));
   }
-}
-
-async function getRunId(symbol){
-  // Match by BOTH symbol (in display_title/name) AND created_at > _triggerTime.
-  // display_title = GitHub's run title = workflow job name = "Snapshot AMPX [...]"
-  // This is the only reliable way to identify OUR run vs runs from other tabs.
-  var wfName = S.wf.replace('.yml','').replace('.yaml','').toLowerCase();
-  var symUp  = symbol.toUpperCase();
-
-  for(var i = 0; i < 20; i++){
-    await sleep(3000);
-    var url = 'https://api.github.com/repos/' + S.repo
-              + '/actions/runs?per_page=15&event=workflow_dispatch';
-    var r = await fetch(url, { headers: ghHeaders() });
-    var d = await r.json();
-    if(!d.workflow_runs) continue;
-
-    var candidates = d.workflow_runs.filter(function(x){
-      // 1. Must be our workflow file
-      var matchWf = (x.path || '').toLowerCase().includes(wfName);
-      // 2. Must contain this tab's symbol in title (display_title or name or head_commit.message)
-      var title = ((x.display_title || '') + ' ' + (x.name || '')).toUpperCase();
-      var matchSym = title.indexOf(symUp) !== -1;
-      // 3. Must be created after we triggered (allow 15s clock skew)
-      var createdMs = new Date(x.created_at).getTime();
-      var inWindow  = createdMs >= (_triggerTime - 15000);
-      return matchWf && matchSym && inWindow;
-    });
-
-    if(candidates.length > 0){
-      candidates.sort(function(a,b){
-        return new Date(b.created_at) - new Date(a.created_at);
-      });
-      var found = candidates[0];
-      console.log('[Snapshot] Matched run #' + found.id
-                  + ' title=' + (found.display_title || found.name)
-                  + ' created=' + found.created_at);
-      return found.id;
-    }
-  }
-  return null;
-}
-
-async function pollRun(runId){
-  var MAX = 600;
-  var POLL = 8;
-  var elapsed = 0;
-  while(elapsed < MAX){
-    await sleep(POLL * 1000);
-    elapsed += POLL;
-    var r = await fetch('https://api.github.com/repos/' + S.repo + '/actions/runs/' + runId, { headers: ghHeaders() });
-    var d = await r.json();
-    var pct = Math.min(78, 10 + (elapsed / MAX) * 68);
-    setProgress(pct);
-    var m = Math.floor(elapsed/60), s = elapsed % 60;
-    var tStr = m > 0 ? m + 'm ' + s + 's' : s + 's';
-    setStatus('run', '⏳ Run <span>#' + runId + '</span> — ' + (d.status || 'queued') + ' | ผ่านไป ' + tStr);
-    if(d.status === 'completed'){
-      if(d.conclusion !== 'success' && d.conclusion !== 'neutral')
-        throw new Error('Run #' + runId + ' สิ้นสุดด้วย: ' + d.conclusion + ' — ดู log ใน GitHub Actions');
-      return;
-    }
-  }
-  throw new Error('Timeout: workflow รันนานเกิน 10 นาที');
-}
-
-async function getArtifact(runId, symbol){
-  var url = 'https://api.github.com/repos/' + S.repo + '/actions/runs/' + runId + '/artifacts';
-  var r   = await fetch(url, { headers: ghHeaders() });
-  var d   = await r.json();
-  if(!d.artifacts || d.artifacts.length === 0) return null;
-  var sym = symbol.toLowerCase();
-  var a = d.artifacts.find(function(x){ return x.name.toLowerCase().includes(sym); });
-  return a || d.artifacts[0];
 }
 
 /* ════════════════════════════════════════════
-   ARTIFACT → IMAGES
+   POLL STATUS JSON on GitHub Pages
+   Workflow writes snapshots/STATUS_{SYM}.json to gh-pages branch.
+   HTML fetches it with cache-bust — no CORS issue.
 ════════════════════════════════════════════ */
-async function loadArtifactImages(artifact, symbol, tfs, exch){
-  var dlUrl = 'https://api.github.com/repos/' + S.repo + '/actions/artifacts/' + artifact.id + '/zip';
-  setStatus('run', '📦 Downloading artifact (' + Math.round(artifact.size_in_bytes / 1024) + ' KB)...');
+async function pollStatusJson(statusUrl, runToken){
+  var MAX_WAIT = 600;
+  var POLL     = 8;
+  var elapsed  = 0;
 
-  var r = await fetch(dlUrl, { headers: ghHeaders() });
-  if(!r.ok) throw new Error('Artifact download failed: ' + r.status + ' — ตรวจสอบ scope ของ Token');
+  while(elapsed < MAX_WAIT){
+    await sleep(POLL * 1000);
+    elapsed += POLL;
 
-  var buf = await r.arrayBuffer();
+    var m   = Math.floor(elapsed/60);
+    var s   = elapsed % 60;
+    var tStr= m > 0 ? m + 'm ' + s + 's' : s + 's';
+    var pct = Math.min(90, 8 + (elapsed/MAX_WAIT)*82);
+    setProgress(pct);
+    setStatus('run','⏳ รอ workflow — ' + tStr + ' | polling Pages...');
 
-  // Load JSZip from CDN
-  if(!window.JSZip){
-    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
+    try{
+      var r = await fetch(statusUrl + '?t=' + Date.now(), {cache:'no-store'});
+      if(!r.ok){ console.log('[poll] HTTP', r.status); continue; }
+
+      var data = await r.json();
+      console.log('[poll]', data.status, 'token:', data.run_token, 'want:', runToken);
+
+      // Must match our runToken so we don't read a stale/other-tab's result
+      if(data.run_token !== runToken){
+        setStatus('run','⏳ รอ workflow ของเรา (พบ token อื่น: ' + data.run_token + ') — ' + tStr);
+        continue;
+      }
+
+      if(data.status === 'done'){
+        if(!data.images || data.images.length === 0)
+          throw new Error('Workflow เสร็จแต่ไม่มีภาพ — ดู Actions log');
+        return data;
+      }
+      if(data.status === 'error'){
+        throw new Error('Workflow error — ดู Actions log สำหรับ ' + data.symbol);
+      }
+      // status === 'running' → keep polling
+
+    }catch(fetchErr){
+      if(fetchErr.message.startsWith('Workflow')) throw fetchErr;
+      console.log('[poll] fetch error:', fetchErr.message);
+    }
   }
+  throw new Error('Timeout: รอนานเกิน 10 นาที');
+}
 
-  var zip   = await JSZip.loadAsync(buf);
-  var files = zip.files;
-
-  // List all PNGs
-  var pngKeys = Object.keys(files).filter(function(n){ return n.toLowerCase().endsWith('.png'); });
-  console.log('[Snapshot] PNGs in artifact:', pngKeys);
-
-  // Show grid, hide empty
+/* ════════════════════════════════════════════
+   SHOW IMAGES FROM STATUS JSON
+   Images are public URLs on GitHub Pages — no download/unzip needed
+════════════════════════════════════════════ */
+async function showImagesFromStatus(statusData, symbol, tfs, exch){
   document.getElementById('empty').style.display = 'none';
   var grid = document.getElementById('grid');
   grid.style.display = 'grid';
 
-  var loaded = 0;
+  // Build map: label → url from status data
+  var imgMap = {};
+  (statusData.images || []).forEach(function(img){ imgMap[img.label] = img.url; });
 
+  var loaded = 0;
   for(var i = 0; i < tfs.length; i++){
-    var tf   = tfs[i];
-    var lbl  = tfLbl(tf);
-    var card = makeCard(symbol, tf, lbl, exch);
+    var tf  = tfs[i];
+    var lbl = tfLbl(tf);
+    var card= makeCard(symbol, tf, lbl, exch);
     card.style.animationDelay = (i * 0.07) + 's';
     grid.appendChild(card);
 
@@ -811,47 +785,32 @@ async function loadArtifactImages(artifact, symbol, tfs, exch){
     var wrap    = card.querySelector('.img-wrap');
     var foot    = card.querySelector('.card-foot span');
 
-    // Find PNG for this TF (match label like 1H, 4H, D, W)
-    var lblLow = lbl.toLowerCase();
-    var tfLow  = tf.toLowerCase();
-    var pngKey = pngKeys.find(function(f){
-      var base = f.split('/').pop().toLowerCase();
-      return base.includes('_' + lblLow + '.') ||
-             base.includes('_' + tfLow + '.') ||
-             base === symbol.toLowerCase() + '_' + lblLow + '.png' ||
-             base === symbol.toLowerCase() + '_' + tfLow + '.png';
-    });
+    var imgUrl = imgMap[lbl];
+    // Cache-bust so browser doesn't show stale image from previous run
+    if(imgUrl) imgUrl = imgUrl + '?t=' + Date.now();
 
-    if(pngKey){
-      try{
-        var blob    = await files[pngKey].async('blob');
-        var objUrl  = URL.createObjectURL(new Blob([blob], {type:'image/png'}));
-        objUrls.push(objUrl);
-
-        loadDiv.style.display = 'none';
-
-        var img = document.createElement('img');
-        img.className = 'ci';
-        img.src = objUrl;
-        img.alt = symbol + ' ' + lbl;
-        wrap.appendChild(img);
-
-        setupCardZoom(wrap, img, symbol, tf, lbl, objUrl, exch);
-        foot.textContent = pngKey.split('/').pop() + ' · ' + new Date().toLocaleTimeString('th-TH');
-        loaded++;
-      }catch(e){
-        console.error('Extract error', pngKey, e);
-        loadDiv.style.display = 'none';
+    if(imgUrl){
+      loadDiv.style.display = 'none';
+      var img = document.createElement('img');
+      img.className = 'ci';
+      img.src = imgUrl;
+      img.alt = symbol + ' ' + lbl;
+      img.onerror = function(){
+        wrap.removeChild(img);
         errDiv.classList.add('show');
-      }
+        foot.textContent = 'โหลดภาพไม่ได้ — ' + lbl;
+      };
+      wrap.appendChild(img);
+      setupCardZoom(wrap, img, symbol, tf, lbl, imgUrl, exch);
+      foot.textContent = symbol + '_' + lbl + '.png · ' + new Date().toLocaleTimeString('th-TH');
+      loaded++;
     }else{
       loadDiv.style.display = 'none';
       errDiv.classList.add('show');
-      foot.textContent = 'ไม่พบภาพ ' + lbl + ' ใน artifact';
+      foot.textContent = 'ไม่พบภาพ ' + lbl + ' ใน status';
     }
   }
-
-  if(loaded === 0) throw new Error('ดึงภาพจาก artifact ไม่ได้ — ตรวจสอบ snapshot.py ว่า save ชื่อไฟล์ถูกต้อง');
+  if(loaded === 0) throw new Error('ไม่มีภาพแม้แต่ตัวเดียว — ตรวจสอบ snapshot_run.py');
 }
 
 /* ════════════════════════════════════════════
@@ -1161,6 +1120,7 @@ function openCfg(){
   document.getElementById('f-repo').value   = S.repo;
   document.getElementById('f-wf').value     = S.wf || 'snapshot.yml';
   document.getElementById('f-branch').value = S.branch || 'main';
+  document.getElementById('f-pages').value  = S.pages || '';
   document.getElementById('cfg-modal').classList.add('open');
 }
 function cfgClose(){ document.getElementById('cfg-modal').classList.remove('open'); }
@@ -1170,6 +1130,7 @@ function cfgSave(){
   S.repo   = document.getElementById('f-repo').value.trim();
   S.wf     = document.getElementById('f-wf').value.trim() || 'snapshot.yml';
   S.branch = document.getElementById('f-branch').value.trim() || 'main';
+  S.pages  = document.getElementById('f-pages').value.trim();
   try{ localStorage.setItem('snap_cfg', JSON.stringify(S)); }catch(e){}
   cfgClose();
   showToast('✅ บันทึก Config แล้ว', 'ok');
