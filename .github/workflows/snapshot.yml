@@ -1,5 +1,5 @@
 name: On-Demand Snapshot
-
+run-name: "Snapshot ${{ github.event.inputs.symbol }} [${{ github.event.inputs.timeframes }}]"
 on:
   workflow_dispatch:
     inputs:
