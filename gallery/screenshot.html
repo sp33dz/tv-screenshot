@@ -489,14 +489,15 @@ async function triggerWorkflow(symbol, exch, tfs, waitSec){
   if(r.status !== 204 && r.status !== 200){ var t = await r.text(); throw new Error('Trigger failed '+r.status+': '+t.slice(0,200)); }
 }
 async function getRunId(symbol){
-  // wfName: "snapshot.yml" -> "snapshot"
-  var wfName  = S.wf.replace(/\.ya?ml$/i,'').toLowerCase();
-  var symLow  = symbol.toLowerCase();
+  var wfName   = S.wf.replace(/\.ya?ml$/i,'').toLowerCase();
+  var symUpper = symbol.toUpperCase();
   // Allow 20 s slack: GitHub may register the run slightly before our JS clock
-  // Use a per-tab trigger timestamp so concurrent tabs don't steal each other's run
   var deadline = _triggerTime - 20000;
+
   for(var i = 0; i < 20; i++){
     await sleep(3000);
+
+    // Step 1: get recent workflow_dispatch runs for our workflow
     var r = await fetch(
       'https://api.github.com/repos/'+S.repo+'/actions/runs?per_page=30&event=workflow_dispatch',
       { headers:ghHeaders() }
@@ -504,48 +505,45 @@ async function getRunId(symbol){
     if(!r.ok){ console.warn('[Snapshot] runs list HTTP '+r.status); continue; }
     var d = await r.json();
     if(!d.workflow_runs || d.workflow_runs.length === 0) continue;
-    var candidates = d.workflow_runs.filter(function(x){
-      // 1. Must belong to our workflow file (path match)
+
+    // Step 2: narrow to runs that belong to our workflow AND are fresh (within time window)
+    var pool = d.workflow_runs.filter(function(x){
       var matchWf   = (x.path||'').toLowerCase().includes(wfName);
-      // 2. Must have been created AFTER we pressed Trigger (with 20 s slack)
       var createdMs = new Date(x.created_at).getTime();
       var fresh     = createdMs >= deadline;
-      // 3. Skip runs that were cancelled before even queuing
-      var alive     = (x.status !== 'cancelled');
-      if(!matchWf || !fresh || !alive) return false;
-      // 4. Must match THIS tab's symbol — check display_title or name contains symbol
-      //    GitHub sets display_title from the workflow "name:" or inputs
-      var title = ((x.display_title||'')+(x.name||'')).toLowerCase();
-      var matchSym = title.includes(symLow);
-      return matchSym;
+      var alive     = x.status !== 'cancelled';
+      return matchWf && fresh && alive;
     });
-    if(candidates.length > 0){
-      // Pick the newest dispatch for this symbol
-      candidates.sort(function(a,b){ return new Date(b.created_at) - new Date(a.created_at); });
-      var found = candidates[0];
-      console.log('[Snapshot] matched run #'+found.id
-        +' symbol='+symbol+' status='+found.status+' title='+found.display_title+' created='+found.created_at);
-      return found.id;
+    if(pool.length === 0) continue;
+
+    // Step 3: fetch each candidate's full details to read inputs.symbol
+    // GitHub run-list API does NOT expose inputs — we must call /runs/{id} individually
+    var matched = null;
+    for(var j = 0; j < pool.length; j++){
+      var candidate = pool[j];
+      try{
+        var rr = await fetch(
+          'https://api.github.com/repos/'+S.repo+'/actions/runs/'+candidate.id,
+          { headers:ghHeaders() }
+        );
+        if(!rr.ok) continue;
+        var dd = await rr.json();
+        // inputs.symbol is exposed in the full run object
+        var inputSym = ((dd.inputs && dd.inputs.symbol) || '').toUpperCase().trim();
+        console.log('[Snapshot] run #'+candidate.id+' inputs.symbol="'+inputSym+'" looking for="'+symUpper+'"');
+        if(inputSym === symUpper){
+          matched = candidate;
+          console.log('[Snapshot] matched run #'+candidate.id+' for '+symUpper
+            +' status='+candidate.status+' created='+candidate.created_at);
+          break;
+        }
+      }catch(e){ console.warn('[Snapshot] error fetching run detail #'+candidate.id, e); }
     }
-    // Fallback: if display_title doesn't include symbol (GitHub doesn't always expose inputs in listing),
-    // fall back to the tightest time-window match: run created closest AFTER our trigger
-    var fallbackCandidates = d.workflow_runs.filter(function(x){
-      var matchWf   = (x.path||'').toLowerCase().includes(wfName);
-      var createdMs = new Date(x.created_at).getTime();
-      // Tight window: must be within [triggerTime-20s, triggerTime+90s]
-      var inWindow  = createdMs >= deadline && createdMs <= (_triggerTime + 90000);
-      var alive     = (x.status !== 'cancelled');
-      return matchWf && inWindow && alive;
-    });
-    if(fallbackCandidates.length > 0){
-      fallbackCandidates.sort(function(a,b){ return new Date(b.created_at) - new Date(a.created_at); });
-      var found = fallbackCandidates[0];
-      console.log('[Snapshot] fallback run #'+found.id
-        +' symbol='+symbol+' status='+found.status+' created='+found.created_at);
-      return found.id;
-    }
-    console.log('[Snapshot] poll '+(i+1)+'/20: no match yet'
-      +' (wfName="'+wfName+'" symbol="'+symbol+'" deadline='+new Date(deadline).toISOString()+')');
+
+    if(matched) return matched.id;
+
+    console.log('[Snapshot] poll '+(i+1)+'/20: no run with inputs.symbol='+symUpper
+      +' yet (checked '+pool.length+' candidates, deadline='+new Date(deadline).toISOString()+')');
   }
   return null;
 }
