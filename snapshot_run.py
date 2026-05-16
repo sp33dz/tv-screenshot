@@ -170,7 +170,7 @@ print("\n=== Opening Chromium ===")
 
 with sync_playwright() as pw:
     context = pw.chromium.launch_persistent_context(
-        user_data_dir="/tmp/.pw_snap_profile",
+        user_data_dir=f"/tmp/.pw_snap_{os.environ.get('GITHUB_RUN_ID', 'local')}",  # unique per run — no cross-run session conflict
         headless=True,
         args=launch_args,
         viewport={"width": 1920, "height": 1080},
