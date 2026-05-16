@@ -9,7 +9,7 @@ on:
         default: "AAPL"
         type: string
       exchange:
-        description: "Exchange prefix (NYSE, NASDAQ, CRYPTO, SET) leave blank for auto"
+        description: "Exchange prefix (NYSE, NASDAQ, CRYPTO, SET) blank=auto"
         required: false
         default: ""
         type: string
@@ -19,7 +19,7 @@ on:
         default: "60,240,D,W"
         type: string
       wait_sec:
-        description: "Seconds to wait for chart to render (8-40)"
+        description: "Seconds to wait for chart render (8-40)"
         required: false
         default: "18"
         type: string
@@ -31,6 +31,11 @@ on:
         options:
           - "dark"
           - "light"
+      run_token:
+        description: "Unique token from HTML tab (used to match this run)"
+        required: false
+        default: ""
+        type: string
 
 concurrency:
   group: "snapshot-${{ github.event.inputs.symbol }}"
@@ -42,6 +47,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    permissions:
+      contents: write
+
     env:
       PYTHONUNBUFFERED: "1"
       PYTHONDONTWRITEBYTECODE: "1"
@@ -51,9 +59,11 @@ jobs:
       INPUT_TIMEFRAMES: ${{ github.event.inputs.timeframes }}
       INPUT_WAIT_SEC: ${{ github.event.inputs.wait_sec }}
       INPUT_THEME: ${{ github.event.inputs.theme }}
+      INPUT_RUN_TOKEN: ${{ github.event.inputs.run_token }}
+      GITHUB_RUN_ID_VAL: ${{ github.run_id }}
 
     steps:
-      - name: Checkout
+      - name: Checkout main branch
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
@@ -70,31 +80,102 @@ jobs:
       - name: Install Chromium
         run: playwright install chromium --with-deps
 
-      - name: Run snapshot script
-        run: python snapshot_run.py
+      - name: Write status=running to gh-pages
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin gh-pages --depth=1 || true
+          git checkout gh-pages || git checkout --orphan gh-pages
+          mkdir -p snapshots
+          python3 -c "
+import json, os, datetime
+sym   = os.environ['INPUT_SYMBOL']
+token = os.environ.get('INPUT_RUN_TOKEN','')
+run_id= os.environ.get('GITHUB_RUN_ID_VAL','')
+status = {
+  'status': 'running',
+  'symbol': sym,
+  'run_token': token,
+  'run_id': run_id,
+  'started_at': datetime.datetime.utcnow().isoformat()+'Z',
+  'images': []
+}
+path = f'snapshots/STATUS_{sym}.json'
+open(path,'w').write(json.dumps(status, indent=2))
+print('Written:', path)
+"
+          git add snapshots/STATUS_*.json
+          git commit -m "snapshot: ${{ github.event.inputs.symbol }} running [run ${{ github.run_id }}]" || true
+          git push origin gh-pages
 
-      - name: Upload artifact
-        if: always()
-        uses: actions/upload-artifact@v4
+      - name: Checkout main for snapshot script
+        uses: actions/checkout@v4
         with:
-          name: "snapshots-${{ github.event.inputs.symbol }}-${{ github.run_id }}"
-          path: snapshots/
-          retention-days: 1
-          if-no-files-found: warn
+          ref: main
+          path: main_code
+          fetch-depth: 1
 
-      - name: Write job summary
+      - name: Run snapshot script
+        run: python main_code/snapshot_run.py
+
+      - name: Commit screenshots + status=done to gh-pages
         if: always()
         run: |
-          echo "### Snapshot Result" >> $GITHUB_STEP_SUMMARY
-          echo "| | |" >> $GITHUB_STEP_SUMMARY
-          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-          echo "| Symbol | \`${{ github.event.inputs.symbol }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Exchange | \`${{ github.event.inputs.exchange || 'auto' }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Timeframes | \`${{ github.event.inputs.timeframes }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Run ID | \`${{ github.run_id }}\` |" >> $GITHUB_STEP_SUMMARY
-          if [ -f snapshots/manifest.json ]; then
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo '```json' >> $GITHUB_STEP_SUMMARY
-            cat snapshots/manifest.json >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin gh-pages --depth=1
+          git checkout gh-pages
+          mkdir -p snapshots
+          cp -f snapshots/*.png . 2>/dev/null || true
+          python3 -c "
+import json, os, datetime, glob
+sym      = os.environ['INPUT_SYMBOL']
+token    = os.environ.get('INPUT_RUN_TOKEN','')
+run_id   = os.environ.get('GITHUB_RUN_ID_VAL','')
+tfs_raw  = os.environ.get('INPUT_TIMEFRAMES','60,240,D,W')
+theme    = os.environ.get('INPUT_THEME','dark')
+pages_url= 'https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}'
+tfs      = [t.strip() for t in tfs_raw.split(',') if t.strip()]
+TF_LABEL = {'1':'1M','5':'5M','15':'15M','30':'30M','60':'1H','240':'4H','D':'D','W':'W'}
+images   = []
+for tf in tfs:
+    lbl  = TF_LABEL.get(tf, tf)
+    fname= f'snapshots/{sym}_{lbl}.png'
+    if os.path.exists(fname):
+        images.append({'tf': tf, 'label': lbl, 'url': f'{pages_url}/snapshots/{sym}_{lbl}.png'})
+status = {
+  'status': 'done',
+  'symbol': sym,
+  'run_token': token,
+  'run_id': run_id,
+  'theme': theme,
+  'finished_at': datetime.datetime.utcnow().isoformat()+'Z',
+  'images': images
+}
+path = f'snapshots/STATUS_{sym}.json'
+open(path,'w').write(json.dumps(status, indent=2))
+print('Written:', path, '| images:', len(images))
+"
+          git add snapshots/
+          git commit -m "snapshot: ${{ github.event.inputs.symbol }} done [run ${{ github.run_id }}]" || true
+          git push origin gh-pages
+
+      - name: Write status=error if failed
+        if: failure()
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin gh-pages --depth=1
+          git checkout gh-pages
+          python3 -c "
+import json, os, datetime
+sym   = os.environ['INPUT_SYMBOL']
+token = os.environ.get('INPUT_RUN_TOKEN','')
+run_id= os.environ.get('GITHUB_RUN_ID_VAL','')
+status= {'status':'error','symbol':sym,'run_token':token,'run_id':run_id,
+         'finished_at':datetime.datetime.utcnow().isoformat()+'Z','images':[]}
+open(f'snapshots/STATUS_{sym}.json','w').write(json.dumps(status,indent=2))
+"
+          git add snapshots/STATUS_*.json
+          git commit -m "snapshot: ${{ github.event.inputs.symbol }} error" || true
+          git push origin gh-pages
