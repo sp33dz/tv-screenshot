@@ -490,38 +490,62 @@ async function triggerWorkflow(symbol, exch, tfs, waitSec){
 }
 async function getRunId(symbol){
   // wfName: "snapshot.yml" -> "snapshot"
-  var wfName = S.wf.replace(/\.ya?ml$/i,'').toLowerCase();
+  var wfName  = S.wf.replace(/\.ya?ml$/i,'').toLowerCase();
+  var symLow  = symbol.toLowerCase();
   // Allow 20 s slack: GitHub may register the run slightly before our JS clock
+  // Use a per-tab trigger timestamp so concurrent tabs don't steal each other's run
   var deadline = _triggerTime - 20000;
   for(var i = 0; i < 20; i++){
     await sleep(3000);
     var r = await fetch(
-      'https://api.github.com/repos/'+S.repo+'/actions/runs?per_page=20&event=workflow_dispatch',
+      'https://api.github.com/repos/'+S.repo+'/actions/runs?per_page=30&event=workflow_dispatch',
       { headers:ghHeaders() }
     );
     if(!r.ok){ console.warn('[Snapshot] runs list HTTP '+r.status); continue; }
     var d = await r.json();
     if(!d.workflow_runs || d.workflow_runs.length === 0) continue;
     var candidates = d.workflow_runs.filter(function(x){
-      // 1. Must belong to our workflow file (path match, not display_title)
+      // 1. Must belong to our workflow file (path match)
       var matchWf   = (x.path||'').toLowerCase().includes(wfName);
       // 2. Must have been created AFTER we pressed Trigger (with 20 s slack)
       var createdMs = new Date(x.created_at).getTime();
       var fresh     = createdMs >= deadline;
       // 3. Skip runs that were cancelled before even queuing
       var alive     = (x.status !== 'cancelled');
-      return matchWf && fresh && alive;
+      if(!matchWf || !fresh || !alive) return false;
+      // 4. Must match THIS tab's symbol — check display_title or name contains symbol
+      //    GitHub sets display_title from the workflow "name:" or inputs
+      var title = ((x.display_title||'')+(x.name||'')).toLowerCase();
+      var matchSym = title.includes(symLow);
+      return matchSym;
     });
     if(candidates.length > 0){
-      // Pick the newest dispatch (our run is always the most recent)
+      // Pick the newest dispatch for this symbol
       candidates.sort(function(a,b){ return new Date(b.created_at) - new Date(a.created_at); });
       var found = candidates[0];
       console.log('[Snapshot] matched run #'+found.id
-        +' status='+found.status+' path='+found.path+' created='+found.created_at);
+        +' symbol='+symbol+' status='+found.status+' title='+found.display_title+' created='+found.created_at);
+      return found.id;
+    }
+    // Fallback: if display_title doesn't include symbol (GitHub doesn't always expose inputs in listing),
+    // fall back to the tightest time-window match: run created closest AFTER our trigger
+    var fallbackCandidates = d.workflow_runs.filter(function(x){
+      var matchWf   = (x.path||'').toLowerCase().includes(wfName);
+      var createdMs = new Date(x.created_at).getTime();
+      // Tight window: must be within [triggerTime-20s, triggerTime+90s]
+      var inWindow  = createdMs >= deadline && createdMs <= (_triggerTime + 90000);
+      var alive     = (x.status !== 'cancelled');
+      return matchWf && inWindow && alive;
+    });
+    if(fallbackCandidates.length > 0){
+      fallbackCandidates.sort(function(a,b){ return new Date(b.created_at) - new Date(a.created_at); });
+      var found = fallbackCandidates[0];
+      console.log('[Snapshot] fallback run #'+found.id
+        +' symbol='+symbol+' status='+found.status+' created='+found.created_at);
       return found.id;
     }
     console.log('[Snapshot] poll '+(i+1)+'/20: no match yet'
-      +' (wfName="'+wfName+'" deadline='+new Date(deadline).toISOString()+')');
+      +' (wfName="'+wfName+'" symbol="'+symbol+'" deadline='+new Date(deadline).toISOString()+')');
   }
   return null;
 }
@@ -548,7 +572,13 @@ async function getArtifact(runId, symbol){
   var d = await r.json();
   if(!d.artifacts || d.artifacts.length === 0) return null;
   var sym = symbol.toLowerCase();
-  return d.artifacts.find(function(x){ return x.name.toLowerCase().includes(sym); }) || d.artifacts[0];
+  // Strict match: artifact name must include the symbol — do NOT fallback to [0]
+  // because another concurrent run for a different symbol may have uploaded first
+  var matched = d.artifacts.find(function(x){ return x.name.toLowerCase().includes(sym); });
+  if(!matched){
+    console.warn('[Snapshot] No artifact matched symbol "'+symbol+'" among: '+d.artifacts.map(function(a){return a.name;}).join(', '));
+  }
+  return matched || null;
 }
 
 /* ARTIFACT IMAGES */
