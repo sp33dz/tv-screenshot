@@ -190,10 +190,16 @@ body::before{
   display:flex;align-items:center;justify-content:center;
   cursor:zoom-in;
 }
-.img-wrap.zoomed{cursor:zoom-out}
-.img-wrap.zoomed .ci{transform:scale(2.3)}
+.img-wrap.zoomed{cursor:grab}
+.img-wrap.zoomed.panning{cursor:grabbing}
 
-.ci{width:100%;height:auto;display:block;transition:transform .25s ease;user-select:none;-webkit-user-drag:none}
+.ci{
+  width:100%;height:auto;display:block;
+  transition:transform .2s ease;
+  user-select:none;-webkit-user-drag:none;
+  transform-origin:center center;
+  will-change:transform;
+}
 
 .z-hint{
   position:absolute;bottom:8px;right:8px;
@@ -236,8 +242,12 @@ body::before{
 #lb-img{
   max-width:100%;max-height:calc(100vh - 130px);
   border-radius:6px;box-shadow:0 20px 80px rgba(0,0,0,.9);
-  transition:transform .25s ease;transform-origin:center center;
+  transform-origin:center center;
+  user-select:none;-webkit-user-drag:none;
+  cursor:grab;
+  will-change:transform;
 }
+#lb-img.panning{cursor:grabbing;transition:none}
 
 #lb-close{
   position:fixed;top:14px;right:18px;z-index:1001;
@@ -414,7 +424,7 @@ body::before{
   <div id="lb-info">
     <span id="lb-sym"></span>
     <span id="lb-tftag" class="tf-tag"></span>
-    <span class="lb-hint">scroll=zoom &nbsp;·&nbsp; +/- &nbsp;·&nbsp; 0=reset &nbsp;·&nbsp; ESC=ปิด</span>
+    <span class="lb-hint">scroll=zoom &nbsp;·&nbsp; drag=เลื่อน &nbsp;·&nbsp; +/- &nbsp;·&nbsp; 0=reset &nbsp;·&nbsp; ESC=ปิด</span>
   </div>
   <div id="lb-ctrl">
     <button class="lb-btn" onclick="lbZ(-.2)">−</button>
@@ -789,15 +799,121 @@ function makeCard(symbol, tf, lbl, exch){
           'เปิดใน TradingView' +
         '</a>' +
       '</div>' +
-      '<span class="z-hint">click=zoom · dbl=เต็มจอ</span>' +
+      '<span class="z-hint">click=zoom · drag=เลื่อน · dbl=เต็มจอ</span>' +
     '</div>' +
     '<div class="card-foot"><span>กำลังโหลด...</span></div>';
   return card;
 }
 
 function setupCardZoom(wrap, img, symbol, tf, lbl, objUrl, exch){
-  wrap.addEventListener('click', function(){ wrap.classList.toggle('zoomed'); });
-  img.addEventListener('dblclick', function(){ lbOpen(objUrl, symbol, lbl); });
+  var ZOOM_SCALE = 2.4;
+  var panX = 0, panY = 0;
+  var dragging = false;
+  var dragStartX = 0, dragStartY = 0;
+  var panStartX = 0, panStartY = 0;
+  var zoomed = false;
+
+  function applyTransform(){
+    if(zoomed){
+      img.style.transition = dragging ? 'none' : 'transform .15s ease';
+      img.style.transform = 'scale(' + ZOOM_SCALE + ') translate(' + panX + 'px,' + panY + 'px)';
+    } else {
+      img.style.transition = 'transform .2s ease';
+      img.style.transform = 'scale(1) translate(0,0)';
+    }
+  }
+
+  function clampPan(){
+    // Clamp pan so image edge doesn't go beyond wrap boundary
+    var ww = wrap.offsetWidth;
+    var wh = wrap.offsetHeight;
+    var iw = img.naturalWidth  || img.offsetWidth;
+    var ih = img.naturalHeight || img.offsetHeight;
+    // scaled image size vs container
+    var scaledW = img.offsetWidth  * ZOOM_SCALE;
+    var scaledH = img.offsetHeight * ZOOM_SCALE;
+    var maxX = Math.max(0, (scaledW - ww) / 2 / ZOOM_SCALE);
+    var maxY = Math.max(0, (scaledH - wh) / 2 / ZOOM_SCALE);
+    panX = Math.max(-maxX, Math.min(maxX, panX));
+    panY = Math.max(-maxY, Math.min(maxY, panY));
+  }
+
+  // Click to toggle zoom (only if not just dragged)
+  var didDrag = false;
+  wrap.addEventListener('mousedown', function(e){
+    if(!zoomed) return;
+    if(e.button !== 0) return;
+    dragging = true;
+    didDrag  = false;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    panStartX  = panX;
+    panStartY  = panY;
+    wrap.classList.add('panning');
+    e.preventDefault();
+  });
+
+  window.addEventListener('mousemove', function(e){
+    if(!dragging) return;
+    var dx = (e.clientX - dragStartX) / ZOOM_SCALE;
+    var dy = (e.clientY - dragStartY) / ZOOM_SCALE;
+    if(Math.abs(dx) > 2 || Math.abs(dy) > 2) didDrag = true;
+    panX = panStartX + dx;
+    panY = panStartY + dy;
+    clampPan();
+    applyTransform();
+  });
+
+  window.addEventListener('mouseup', function(){
+    if(!dragging) return;
+    dragging = false;
+    wrap.classList.remove('panning');
+    clampPan();
+    applyTransform();
+  });
+
+  // Touch support (mobile)
+  var touchStartX = 0, touchStartY = 0;
+  wrap.addEventListener('touchstart', function(e){
+    if(!zoomed || e.touches.length !== 1) return;
+    dragging   = true;
+    didDrag    = false;
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+    panStartX   = panX;
+    panStartY   = panY;
+    e.preventDefault();
+  }, { passive: false });
+
+  wrap.addEventListener('touchmove', function(e){
+    if(!dragging || e.touches.length !== 1) return;
+    var dx = (e.touches[0].clientX - touchStartX) / ZOOM_SCALE;
+    var dy = (e.touches[0].clientY - touchStartY) / ZOOM_SCALE;
+    if(Math.abs(dx) > 2 || Math.abs(dy) > 2) didDrag = true;
+    panX = panStartX + dx;
+    panY = panStartY + dy;
+    clampPan();
+    applyTransform();
+    e.preventDefault();
+  }, { passive: false });
+
+  wrap.addEventListener('touchend', function(){
+    dragging = false;
+    clampPan();
+    applyTransform();
+  });
+
+  // Single click = toggle zoom (skip if drag just happened)
+  wrap.addEventListener('click', function(e){
+    if(didDrag){ didDrag = false; return; }
+    zoomed = !zoomed;
+    if(!zoomed){ panX = 0; panY = 0; }
+    wrap.classList.toggle('zoomed', zoomed);
+    applyTransform();
+  });
+
+  // Double click = lightbox
+  img.addEventListener('dblclick', function(e){ e.stopPropagation(); lbOpen(objUrl, symbol, lbl); });
 
   var acts = document.getElementById('ca-' + tf);
   if(!acts) return;
@@ -843,34 +959,105 @@ function makeIcn(svg, title){
 }
 
 /* ════════════════════════════════════════════
-   LIGHTBOX
+   LIGHTBOX — zoom + drag to pan
 ════════════════════════════════════════════ */
+var lbPanX = 0, lbPanY = 0;
+var lbDragging = false;
+var lbDragSX = 0, lbDragSY = 0;
+var lbPanSX = 0, lbPanSY = 0;
+var lbDidDrag = false;
+
+function lbApplyTransform(){
+  var imgEl = document.getElementById('lb-img');
+  imgEl.style.transform = 'scale(' + lbZoomLvl + ') translate(' + lbPanX + 'px,' + lbPanY + 'px)';
+  document.getElementById('lb-pct').textContent = Math.round(lbZoomLvl * 100) + '%';
+}
+
+function lbClampPan(){
+  // Allow pan proportional to zoom level
+  var imgEl = document.getElementById('lb-img');
+  var maxX = Math.max(0, imgEl.offsetWidth  * (lbZoomLvl - 1) / 2 / lbZoomLvl);
+  var maxY = Math.max(0, imgEl.offsetHeight * (lbZoomLvl - 1) / 2 / lbZoomLvl);
+  lbPanX = Math.max(-maxX, Math.min(maxX, lbPanX));
+  lbPanY = Math.max(-maxY, Math.min(maxY, lbPanY));
+}
+
 function lbOpen(url, symbol, lbl){
   lbZoomLvl = 1;
-  var lbEl = document.getElementById('lb');
+  lbPanX = 0; lbPanY = 0;
   var imgEl = document.getElementById('lb-img');
   imgEl.src = url;
   imgEl.style.transform = 'scale(1)';
-  document.getElementById('lb-sym').textContent = symbol;
-  document.getElementById('lb-tftag').textContent = lbl;
-  document.getElementById('lb-pct').textContent = '100%';
-  lbEl.classList.add('open');
+  imgEl.style.transition = 'transform .2s ease';
+  document.getElementById('lb-sym').textContent    = symbol;
+  document.getElementById('lb-tftag').textContent  = lbl;
+  document.getElementById('lb-pct').textContent    = '100%';
+  document.getElementById('lb').classList.add('open');
   document.body.style.overflow = 'hidden';
-  imgEl.onwheel = function(e){ e.preventDefault(); lbZ(e.deltaY < 0 ? .15 : -.15); };
+
+  // Wheel zoom
+  imgEl.onwheel = function(e){
+    e.preventDefault();
+    lbZ(e.deltaY < 0 ? .15 : -.15);
+  };
+
+  // Mouse drag
+  imgEl.onmousedown = function(e){
+    if(e.button !== 0) return;
+    lbDragging = true;
+    lbDidDrag  = false;
+    lbDragSX   = e.clientX;
+    lbDragSY   = e.clientY;
+    lbPanSX    = lbPanX;
+    lbPanSY    = lbPanY;
+    imgEl.classList.add('panning');
+    e.preventDefault();
+  };
 }
+
+// Lightbox global mouse events (attached once)
+window.addEventListener('mousemove', function(e){
+  if(!lbDragging) return;
+  var dx = (e.clientX - lbDragSX) / lbZoomLvl;
+  var dy = (e.clientY - lbDragSY) / lbZoomLvl;
+  if(Math.abs(dx) > 2 || Math.abs(dy) > 2) lbDidDrag = true;
+  lbPanX = lbPanSX + dx;
+  lbPanY = lbPanSY + dy;
+  lbClampPan();
+  lbApplyTransform();
+});
+
+window.addEventListener('mouseup', function(){
+  if(!lbDragging) return;
+  lbDragging = false;
+  document.getElementById('lb-img').classList.remove('panning');
+  lbClampPan();
+  lbApplyTransform();
+});
+
 function lbClose(){
+  if(lbDragging) return; // don't close mid-drag
+  var imgEl = document.getElementById('lb-img');
   document.getElementById('lb').classList.remove('open');
   document.body.style.overflow = '';
-  document.getElementById('lb-img').onwheel = null;
+  imgEl.onwheel    = null;
+  imgEl.onmousedown= null;
+  lbDragging = false;
+  lbPanX = 0; lbPanY = 0;
 }
 function lbClickBg(e){
+  if(lbDidDrag){ lbDidDrag = false; return; }
   if(e.target === document.getElementById('lb')) lbClose();
 }
 function lbZ(delta, reset){
-  if(reset) lbZoomLvl = 1;
-  else lbZoomLvl = Math.max(.25, Math.min(8, lbZoomLvl + delta));
-  document.getElementById('lb-img').style.transform = 'scale(' + lbZoomLvl + ')';
-  document.getElementById('lb-pct').textContent = Math.round(lbZoomLvl * 100) + '%';
+  if(reset){ lbZoomLvl = 1; lbPanX = 0; lbPanY = 0; }
+  else {
+    lbZoomLvl = Math.max(.25, Math.min(8, lbZoomLvl + delta));
+    lbClampPan();
+  }
+  var imgEl = document.getElementById('lb-img');
+  imgEl.style.transition = 'transform .15s ease';
+  lbApplyTransform();
 }
 
 /* ════════════════════════════════════════════
