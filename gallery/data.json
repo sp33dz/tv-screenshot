@@ -826,6 +826,21 @@
       "datetime_str": "2026-05-18 17:11"
     },
     {
+      "path": "US/AAOI/2026-05/AAOI_2026-05-18_18-07.png",
+      "abs_path": "screenshots/US/AAOI/2026-05/AAOI_2026-05-18_18-07.png",
+      "symbol": "AAOI",
+      "market": "US",
+      "date": "2026-05-18",
+      "time": "18-07",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 425662,
+      "month": "2026-05",
+      "drive_name": "DriveB",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=1j31QXDowbybqUwwmL4v0FOvvx8Tmqv_Q&sz=s0-rw-v1",
+      "datetime_str": "2026-05-18 18:07"
+    },
+    {
       "path": "US/AEHR/2026-05/AEHR_2026-05-16_06-08.png",
       "abs_path": "screenshots/US/AEHR/2026-05/AEHR_2026-05-16_06-08.png",
       "symbol": "AEHR",
@@ -1649,6 +1664,21 @@
       "drive_name": "DriveD",
       "drive_public_url": "https://drive.google.com/thumbnail?id=1UY-CFXyfelG8eWc_y0czZU0sUH-12ujQ&sz=s0-rw-v1",
       "datetime_str": "2026-05-18 17:08"
+    },
+    {
+      "path": "US/AEHR/2026-05/AEHR_2026-05-18_18-06.png",
+      "abs_path": "screenshots/US/AEHR/2026-05/AEHR_2026-05-18_18-06.png",
+      "symbol": "AEHR",
+      "market": "US",
+      "date": "2026-05-18",
+      "time": "18-06",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 398567,
+      "month": "2026-05",
+      "drive_name": "DriveD",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=1XcFPdNd1vqmj-tgOYuQWXufVVY4ltaHI&sz=s0-rw-v1",
+      "datetime_str": "2026-05-18 18:06"
     },
     {
       "path": "US/AGPU/2026-05/AGPU_2026-05-16_06-22.png",
@@ -2476,6 +2506,21 @@
       "datetime_str": "2026-05-18 17:20"
     },
     {
+      "path": "US/AGPU/2026-05/AGPU_2026-05-18_18-17.png",
+      "abs_path": "screenshots/US/AGPU/2026-05/AGPU_2026-05-18_18-17.png",
+      "symbol": "AGPU",
+      "market": "US",
+      "date": "2026-05-18",
+      "time": "18-17",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 364044,
+      "month": "2026-05",
+      "drive_name": "DriveB",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=12NzWhu4IKN0vdxl-whMdI79ZH9eJOYQV&sz=s0-rw-v1",
+      "datetime_str": "2026-05-18 18:17"
+    },
+    {
       "path": "US/AIXI/2026-05/AIXI_2026-05-16_06-03.png",
       "abs_path": "screenshots/US/AIXI/2026-05/AIXI_2026-05-16_06-03.png",
       "symbol": "AIXI",
@@ -3299,6 +3344,21 @@
       "drive_name": "DriveD",
       "drive_public_url": "https://drive.google.com/thumbnail?id=1qj7x2bS_Afh_OlXe_IUN9K2HYoLObzQS&sz=s0-rw-v1",
       "datetime_str": "2026-05-18 17:04"
+    },
+    {
+      "path": "US/AIXI/2026-05/AIXI_2026-05-18_18-03.png",
+      "abs_path": "screenshots/US/AIXI/2026-05/AIXI_2026-05-18_18-03.png",
+      "symbol": "AIXI",
+      "market": "US",
+      "date": "2026-05-18",
+      "time": "18-03",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 392603,
+      "month": "2026-05",
+      "drive_name": "DriveD",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=1NpTf_eVPQzPAxC69jgMGZmYOjT4Mr4gl&sz=s0-rw-v1",
+      "datetime_str": "2026-05-18 18:03"
     },
     {
       "path": "US/AMPX/2026-05/AMPX_2026-05-16_06-05.png",
@@ -4126,6 +4186,21 @@
       "datetime_str": "2026-05-18 17:04"
     },
     {
+      "path": "US/AMPX/2026-05/AMPX_2026-05-18_18-03.png",
+      "abs_path": "screenshots/US/AMPX/2026-05/AMPX_2026-05-18_18-03.png",
+      "symbol": "AMPX",
+      "market": "US",
+      "date": "2026-05-18",
+      "time": "18-03",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 366032,
+      "month": "2026-05",
+      "drive_name": "DriveF",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=1K-8rvz-nNyUOdBkO40n6IPo-_kVfu0Ys&sz=s0-rw-v1",
+      "datetime_str": "2026-05-18 18:03"
+    },
+    {
       "path": "US/ASPN/2026-05/ASPN_2026-05-16_06-21.png",
       "abs_path": "screenshots/US/ASPN/2026-05/ASPN_2026-05-16_06-21.png",
       "symbol": "ASPN",
@@ -4949,6 +5024,21 @@
       "drive_name": "DriveG",
       "drive_public_url": "https://drive.google.com/thumbnail?id=1MZs8thyQpEOdOHzGRdpYY5RSTAo-6djY&sz=s0-rw-v1",
       "datetime_str": "2026-05-18 17:19"
+    },
+    {
+      "path": "US/ASPN/2026-05/ASPN_2026-05-18_18-16.png",
+      "abs_path": "screenshots/US/ASPN/2026-05/ASPN_2026-05-18_18-16.png",
+      "symbol": "ASPN",
+      "market": "US",
+      "date": "2026-05-18",
+      "time": "18-16",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 387251,
+      "month": "2026-05",
+      "drive_name": "DriveG",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=1YeSI7cqUbrOIC7bw1Vs2GZf-XBIt9TSI&sz=s0-rw-v1",
+      "datetime_str": "2026-05-18 18:16"
     },
     {
       "path": "US/ATER/2026-05/ATER_2026-05-16_06-18.png",
@@ -5776,6 +5866,21 @@
       "datetime_str": "2026-05-18 17:16"
     },
     {
+      "path": "US/ATER/2026-05/ATER_2026-05-18_18-13.png",
+      "abs_path": "screenshots/US/ATER/2026-05/ATER_2026-05-18_18-13.png",
+      "symbol": "ATER",
+      "market": "US",
+      "date": "2026-05-18",
+      "time": "18-13",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 346330,
+      "month": "2026-05",
+      "drive_name": "DriveD",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=15pqsVIKa9jRQoR0Ow0wtbUIY0QzU60Uk&sz=s0-rw-v1",
+      "datetime_str": "2026-05-18 18:13"
+    },
+    {
       "path": "CRYPTO/BTCTHB/2026-05/BTCTHB_2026-05-16_06-23.png",
       "abs_path": "screenshots/CRYPTO/BTCTHB/2026-05/BTCTHB_2026-05-16_06-23.png",
       "symbol": "BTCTHB",
@@ -6479,6 +6584,21 @@
       "drive_name": "DriveA",
       "drive_public_url": "https://drive.google.com/thumbnail?id=1LRBNIcxiavYv3fnLJpbtrfTxYHim7M8G&sz=s0-rw-v1",
       "datetime_str": "2026-05-18 17:21"
+    },
+    {
+      "path": "CRYPTO/BTCTHB/2026-05/BTCTHB_2026-05-18_18-18.png",
+      "abs_path": "screenshots/CRYPTO/BTCTHB/2026-05/BTCTHB_2026-05-18_18-18.png",
+      "symbol": "BTCTHB",
+      "market": "CRYPTO",
+      "date": "2026-05-18",
+      "time": "18-18",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 393829,
+      "month": "2026-05",
+      "drive_name": "DriveA",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=1qJxEO0iMAJ74BtCqSOlk4JN3KCCY0dW3&sz=s0-rw-v1",
+      "datetime_str": "2026-05-18 18:18"
     },
     {
       "path": "US/CV/2026-05/CV_2026-05-16_06-15.png",
@@ -7306,6 +7426,21 @@
       "datetime_str": "2026-05-18 17:13"
     },
     {
+      "path": "US/CV/2026-05/CV_2026-05-18_18-10.png",
+      "abs_path": "screenshots/US/CV/2026-05/CV_2026-05-18_18-10.png",
+      "symbol": "CV",
+      "market": "US",
+      "date": "2026-05-18",
+      "time": "18-10",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 365718,
+      "month": "2026-05",
+      "drive_name": "DriveB",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=10m9np0qVU-b9RUFXud7LXIc4oZku0LZ9&sz=s0-rw-v1",
+      "datetime_str": "2026-05-18 18:10"
+    },
+    {
       "path": "US/CVV/2026-05/CVV_2026-05-16_06-13.png",
       "abs_path": "screenshots/US/CVV/2026-05/CVV_2026-05-16_06-13.png",
       "symbol": "CVV",
@@ -8129,6 +8264,21 @@
       "drive_name": "DriveF",
       "drive_public_url": "https://drive.google.com/thumbnail?id=1VsgCgjYDKA8C6UQ4arJv0OtwgaNmX2Ou&sz=s0-rw-v1",
       "datetime_str": "2026-05-18 17:12"
+    },
+    {
+      "path": "US/CVV/2026-05/CVV_2026-05-18_18-08.png",
+      "abs_path": "screenshots/US/CVV/2026-05/CVV_2026-05-18_18-08.png",
+      "symbol": "CVV",
+      "market": "US",
+      "date": "2026-05-18",
+      "time": "18-08",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 394387,
+      "month": "2026-05",
+      "drive_name": "DriveF",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=16IwO6HvDK8CeV1pAF-uUEQAPXb75C0AJ&sz=s0-rw-v1",
+      "datetime_str": "2026-05-18 18:08"
     },
     {
       "path": "US/DHX/2026-05/DHX_2026-05-16_06-19.png",
@@ -8956,6 +9106,21 @@
       "datetime_str": "2026-05-18 17:17"
     },
     {
+      "path": "US/DHX/2026-05/DHX_2026-05-18_18-14.png",
+      "abs_path": "screenshots/US/DHX/2026-05/DHX_2026-05-18_18-14.png",
+      "symbol": "DHX",
+      "market": "US",
+      "date": "2026-05-18",
+      "time": "18-14",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 387175,
+      "month": "2026-05",
+      "drive_name": "DriveG",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=1qnHPJ8NKnv0tVHOXZk8mRizBaPWyFRVW&sz=s0-rw-v1",
+      "datetime_str": "2026-05-18 18:14"
+    },
+    {
       "path": "US/EFOI/2026-05/EFOI_2026-05-16_06-14.png",
       "abs_path": "screenshots/US/EFOI/2026-05/EFOI_2026-05-16_06-14.png",
       "symbol": "EFOI",
@@ -9779,6 +9944,21 @@
       "drive_name": "DriveG",
       "drive_public_url": "https://drive.google.com/thumbnail?id=1cHbwCg__g4cmzuYF7Q62-NtosoXszlSF&sz=s0-rw-v1",
       "datetime_str": "2026-05-18 17:13"
+    },
+    {
+      "path": "US/EFOI/2026-05/EFOI_2026-05-18_18-09.png",
+      "abs_path": "screenshots/US/EFOI/2026-05/EFOI_2026-05-18_18-09.png",
+      "symbol": "EFOI",
+      "market": "US",
+      "date": "2026-05-18",
+      "time": "18-09",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 382861,
+      "month": "2026-05",
+      "drive_name": "DriveG",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=1ypldETY_IRkq2GRDTZ2ewur4KUu8yzb0&sz=s0-rw-v1",
+      "datetime_str": "2026-05-18 18:09"
     },
     {
       "path": "US/ENPH/2026-05/ENPH_2026-05-16_06-03.png",
@@ -10606,6 +10786,21 @@
       "datetime_str": "2026-05-18 17:03"
     },
     {
+      "path": "US/ENPH/2026-05/ENPH_2026-05-18_18-02.png",
+      "abs_path": "screenshots/US/ENPH/2026-05/ENPH_2026-05-18_18-02.png",
+      "symbol": "ENPH",
+      "market": "US",
+      "date": "2026-05-18",
+      "time": "18-02",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 402669,
+      "month": "2026-05",
+      "drive_name": "DriveB",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=19xHD9HNHJfv--3uPPCOFnnOL_N3rsnZz&sz=s0-rw-v1",
+      "datetime_str": "2026-05-18 18:02"
+    },
+    {
       "path": "US/FSLY/2026-05/FSLY_2026-05-16_06-20.png",
       "abs_path": "screenshots/US/FSLY/2026-05/FSLY_2026-05-16_06-20.png",
       "symbol": "FSLY",
@@ -11429,6 +11624,21 @@
       "drive_name": "DriveD",
       "drive_public_url": "https://drive.google.com/thumbnail?id=1hQJiUmxYyHk2VD4pFDYXu8QivfsZPWbM&sz=s0-rw-v1",
       "datetime_str": "2026-05-18 17:18"
+    },
+    {
+      "path": "US/FSLY/2026-05/FSLY_2026-05-18_18-15.png",
+      "abs_path": "screenshots/US/FSLY/2026-05/FSLY_2026-05-18_18-15.png",
+      "symbol": "FSLY",
+      "market": "US",
+      "date": "2026-05-18",
+      "time": "18-15",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 350261,
+      "month": "2026-05",
+      "drive_name": "DriveD",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=1ow0ypKyjY3iG3aiRpDrU7Ts3os5khIj2&sz=s0-rw-v1",
+      "datetime_str": "2026-05-18 18:15"
     },
     {
       "path": "US/GEOS/2026-05/GEOS_2026-05-16_06-06.png",
@@ -12256,6 +12466,21 @@
       "datetime_str": "2026-05-18 17:05"
     },
     {
+      "path": "US/GEOS/2026-05/GEOS_2026-05-18_18-04.png",
+      "abs_path": "screenshots/US/GEOS/2026-05/GEOS_2026-05-18_18-04.png",
+      "symbol": "GEOS",
+      "market": "US",
+      "date": "2026-05-18",
+      "time": "18-04",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 383362,
+      "month": "2026-05",
+      "drive_name": "DriveG",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=1XalEEZUrMa9p4oZqjrQ1b4KiW-GtZqk-&sz=s0-rw-v1",
+      "datetime_str": "2026-05-18 18:04"
+    },
+    {
       "path": "US/GPRO/2026-05/GPRO_2026-05-16_06-18.png",
       "abs_path": "screenshots/US/GPRO/2026-05/GPRO_2026-05-16_06-18.png",
       "symbol": "GPRO",
@@ -13079,6 +13304,21 @@
       "drive_name": "DriveF",
       "drive_public_url": "https://drive.google.com/thumbnail?id=17-ziRiZSou2GTqoRWfNd7xTI76sHpzcS&sz=s0-rw-v1",
       "datetime_str": "2026-05-18 17:16"
+    },
+    {
+      "path": "US/GPRO/2026-05/GPRO_2026-05-18_18-14.png",
+      "abs_path": "screenshots/US/GPRO/2026-05/GPRO_2026-05-18_18-14.png",
+      "symbol": "GPRO",
+      "market": "US",
+      "date": "2026-05-18",
+      "time": "18-14",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 367351,
+      "month": "2026-05",
+      "drive_name": "DriveF",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=1AXckpA2RV1p3XsnQG3hD_G74C25MU9FH&sz=s0-rw-v1",
+      "datetime_str": "2026-05-18 18:14"
     },
     {
       "path": "US/LNAI/2026-05/LNAI_2026-05-16_06-16.png",
@@ -13906,6 +14146,21 @@
       "datetime_str": "2026-05-18 17:14"
     },
     {
+      "path": "US/LNAI/2026-05/LNAI_2026-05-18_18-12.png",
+      "abs_path": "screenshots/US/LNAI/2026-05/LNAI_2026-05-18_18-12.png",
+      "symbol": "LNAI",
+      "market": "US",
+      "date": "2026-05-18",
+      "time": "18-12",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 351677,
+      "month": "2026-05",
+      "drive_name": "DriveF",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=1-ot4kfCz3lTIQkvJkVInEy5quZ7P6k9n&sz=s0-rw-v1",
+      "datetime_str": "2026-05-18 18:12"
+    },
+    {
       "path": "US/LTRX/2026-05/LTRX_2026-05-16_06-12.png",
       "abs_path": "screenshots/US/LTRX/2026-05/LTRX_2026-05-16_06-12.png",
       "symbol": "LTRX",
@@ -14729,6 +14984,21 @@
       "drive_name": "DriveD",
       "drive_public_url": "https://drive.google.com/thumbnail?id=1ymeCKkeNby2gSkC3wwVkGbhf84eEs9X3&sz=s0-rw-v1",
       "datetime_str": "2026-05-18 17:12"
+    },
+    {
+      "path": "US/LTRX/2026-05/LTRX_2026-05-18_18-08.png",
+      "abs_path": "screenshots/US/LTRX/2026-05/LTRX_2026-05-18_18-08.png",
+      "symbol": "LTRX",
+      "market": "US",
+      "date": "2026-05-18",
+      "time": "18-08",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 363778,
+      "month": "2026-05",
+      "drive_name": "DriveD",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=1E5zntKD7dQLSeFqFxMk-9bTljWqNj0Wb&sz=s0-rw-v1",
+      "datetime_str": "2026-05-18 18:08"
     },
     {
       "path": "US/NAVN/2026-05/NAVN_2026-05-16_06-16.png",
@@ -15556,6 +15826,21 @@
       "datetime_str": "2026-05-18 17:14"
     },
     {
+      "path": "US/NAVN/2026-05/NAVN_2026-05-18_18-10.png",
+      "abs_path": "screenshots/US/NAVN/2026-05/NAVN_2026-05-18_18-10.png",
+      "symbol": "NAVN",
+      "market": "US",
+      "date": "2026-05-18",
+      "time": "18-10",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 376608,
+      "month": "2026-05",
+      "drive_name": "DriveD",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=1p2rk3JxvOpM5bT9uGQvHhQxAbrqsBlo4&sz=s0-rw-v1",
+      "datetime_str": "2026-05-18 18:10"
+    },
+    {
       "path": "US/NBIS/2026-05/NBIS_2026-05-16_06-07.png",
       "abs_path": "screenshots/US/NBIS/2026-05/NBIS_2026-05-16_06-07.png",
       "symbol": "NBIS",
@@ -16379,6 +16664,21 @@
       "drive_name": "DriveB",
       "drive_public_url": "https://drive.google.com/thumbnail?id=14wjkWA6I3YYIDSbP4G044YEQz_Wws1Er&sz=s0-rw-v1",
       "datetime_str": "2026-05-18 17:07"
+    },
+    {
+      "path": "US/NBIS/2026-05/NBIS_2026-05-18_18-05.png",
+      "abs_path": "screenshots/US/NBIS/2026-05/NBIS_2026-05-18_18-05.png",
+      "symbol": "NBIS",
+      "market": "US",
+      "date": "2026-05-18",
+      "time": "18-05",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 413019,
+      "month": "2026-05",
+      "drive_name": "DriveB",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=1YQRCBXlXWITSRJiYVLtC8soQ3w0AJGV9&sz=s0-rw-v1",
+      "datetime_str": "2026-05-18 18:05"
     },
     {
       "path": "US/NLST/2026-05/NLST_2026-05-16_06-11.png",
@@ -17206,6 +17506,21 @@
       "datetime_str": "2026-05-18 17:10"
     },
     {
+      "path": "US/NLST/2026-05/NLST_2026-05-18_18-07.png",
+      "abs_path": "screenshots/US/NLST/2026-05/NLST_2026-05-18_18-07.png",
+      "symbol": "NLST",
+      "market": "US",
+      "date": "2026-05-18",
+      "time": "18-07",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 405030,
+      "month": "2026-05",
+      "drive_name": "DriveG",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=1h-BUjkKkLwzpgwBpIF-NN5--mDSzb6zY&sz=s0-rw-v1",
+      "datetime_str": "2026-05-18 18:07"
+    },
+    {
       "path": "US/NRXS/2026-05/NRXS_2026-05-16_06-22.png",
       "abs_path": "screenshots/US/NRXS/2026-05/NRXS_2026-05-16_06-22.png",
       "symbol": "NRXS",
@@ -18029,6 +18344,21 @@
       "drive_name": "DriveD",
       "drive_public_url": "https://drive.google.com/thumbnail?id=1Cr0DycxeJ9fs1GeCMwsUubapocJwDO8J&sz=s0-rw-v1",
       "datetime_str": "2026-05-18 17:20"
+    },
+    {
+      "path": "US/NRXS/2026-05/NRXS_2026-05-18_18-17.png",
+      "abs_path": "screenshots/US/NRXS/2026-05/NRXS_2026-05-18_18-17.png",
+      "symbol": "NRXS",
+      "market": "US",
+      "date": "2026-05-18",
+      "time": "18-17",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 355730,
+      "month": "2026-05",
+      "drive_name": "DriveD",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=1soOtWq4jsSlh_TUyg4JEpMUQSvClekWn&sz=s0-rw-v1",
+      "datetime_str": "2026-05-18 18:17"
     },
     {
       "path": "US/OCC/2026-05/OCC_2026-05-16_06-17.png",
@@ -18856,6 +19186,21 @@
       "datetime_str": "2026-05-18 17:15"
     },
     {
+      "path": "US/OCC/2026-05/OCC_2026-05-18_18-12.png",
+      "abs_path": "screenshots/US/OCC/2026-05/OCC_2026-05-18_18-12.png",
+      "symbol": "OCC",
+      "market": "US",
+      "date": "2026-05-18",
+      "time": "18-12",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 380219,
+      "month": "2026-05",
+      "drive_name": "DriveG",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=1cSI5pAywf9BOonbOTmhMEPuGsrErwJJz&sz=s0-rw-v1",
+      "datetime_str": "2026-05-18 18:12"
+    },
+    {
       "path": "US/OPTX/2026-05/OPTX_2026-05-16_06-19.png",
       "abs_path": "screenshots/US/OPTX/2026-05/OPTX_2026-05-16_06-19.png",
       "symbol": "OPTX",
@@ -19679,6 +20024,21 @@
       "drive_name": "DriveB",
       "drive_public_url": "https://drive.google.com/thumbnail?id=1ZUA_BcNQNnfl14yXkmVmQ3eqWrRAuQcG&sz=s0-rw-v1",
       "datetime_str": "2026-05-18 17:17"
+    },
+    {
+      "path": "US/OPTX/2026-05/OPTX_2026-05-18_18-15.png",
+      "abs_path": "screenshots/US/OPTX/2026-05/OPTX_2026-05-18_18-15.png",
+      "symbol": "OPTX",
+      "market": "US",
+      "date": "2026-05-18",
+      "time": "18-15",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 386477,
+      "month": "2026-05",
+      "drive_name": "DriveB",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=1sZyN2glh6GgGeGzMM_jr7BE2bmPymUvI&sz=s0-rw-v1",
+      "datetime_str": "2026-05-18 18:15"
     },
     {
       "path": "US/PRPH/2026-05/PRPH_2026-05-16_06-17.png",
@@ -20506,6 +20866,21 @@
       "datetime_str": "2026-05-18 17:15"
     },
     {
+      "path": "US/PRPH/2026-05/PRPH_2026-05-18_18-13.png",
+      "abs_path": "screenshots/US/PRPH/2026-05/PRPH_2026-05-18_18-13.png",
+      "symbol": "PRPH",
+      "market": "US",
+      "date": "2026-05-18",
+      "time": "18-13",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 355105,
+      "month": "2026-05",
+      "drive_name": "DriveB",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=1N9wbUhh0AVivojWYyMVl03DVHfYstwFI&sz=s0-rw-v1",
+      "datetime_str": "2026-05-18 18:13"
+    },
+    {
       "path": "US/SONM/2026-05/SONM_2026-05-16_06-20.png",
       "abs_path": "screenshots/US/SONM/2026-05/SONM_2026-05-16_06-20.png",
       "symbol": "SONM",
@@ -21329,6 +21704,21 @@
       "drive_name": "DriveF",
       "drive_public_url": "https://drive.google.com/thumbnail?id=1yrx7I4eGTZp9PSquO6-VtSxSKn6-IB_N&sz=s0-rw-v1",
       "datetime_str": "2026-05-18 17:18"
+    },
+    {
+      "path": "US/SONM/2026-05/SONM_2026-05-18_18-16.png",
+      "abs_path": "screenshots/US/SONM/2026-05/SONM_2026-05-18_18-16.png",
+      "symbol": "SONM",
+      "market": "US",
+      "date": "2026-05-18",
+      "time": "18-16",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 387895,
+      "month": "2026-05",
+      "drive_name": "DriveF",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=1ZnizjMd7Bde6Q2zBsV5lB1H2CUy1wjYo&sz=s0-rw-v1",
+      "datetime_str": "2026-05-18 18:16"
     },
     {
       "path": "US/TXMD/2026-05/TXMD_2026-05-16_06-10.png",
@@ -22156,6 +22546,21 @@
       "datetime_str": "2026-05-18 17:09"
     },
     {
+      "path": "US/TXMD/2026-05/TXMD_2026-05-18_18-06.png",
+      "abs_path": "screenshots/US/TXMD/2026-05/TXMD_2026-05-18_18-06.png",
+      "symbol": "TXMD",
+      "market": "US",
+      "date": "2026-05-18",
+      "time": "18-06",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 355116,
+      "month": "2026-05",
+      "drive_name": "DriveF",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=1TyCfEnbJgUn7M3ib3L-JHoPoDlcqtiSs&sz=s0-rw-v1",
+      "datetime_str": "2026-05-18 18:06"
+    },
+    {
       "path": "US/UAMY/2026-05/UAMY_2026-05-16_06-23.png",
       "abs_path": "screenshots/US/UAMY/2026-05/UAMY_2026-05-16_06-23.png",
       "symbol": "UAMY",
@@ -22979,6 +23384,21 @@
       "drive_name": "DriveF",
       "drive_public_url": "https://drive.google.com/thumbnail?id=1IsjDjTzAPtSDtgPU5W3QKl5rwGvOJsf9&sz=s0-rw-v1",
       "datetime_str": "2026-05-18 17:21"
+    },
+    {
+      "path": "US/UAMY/2026-05/UAMY_2026-05-18_18-18.png",
+      "abs_path": "screenshots/US/UAMY/2026-05/UAMY_2026-05-18_18-18.png",
+      "symbol": "UAMY",
+      "market": "US",
+      "date": "2026-05-18",
+      "time": "18-18",
+      "tag": "",
+      "is_pinned": false,
+      "size_bytes": 359492,
+      "month": "2026-05",
+      "drive_name": "DriveF",
+      "drive_public_url": "https://drive.google.com/thumbnail?id=1gqF4kSbmzLIax93z9uvZk3AQ7quiUOjz&sz=s0-rw-v1",
+      "datetime_str": "2026-05-18 18:18"
     }
   ],
   "symbols": [
@@ -23026,6 +23446,6 @@
     "DriveF",
     "DriveG"
   ],
-  "total_files": 1532,
-  "generated_at": "2026-05-18T10:22:03"
+  "total_files": 1560,
+  "generated_at": "2026-05-18T11:19:01"
 }
