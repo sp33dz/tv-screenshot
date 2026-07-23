@@ -219,21 +219,100 @@ def is_frozen_frame(symbol: str, image_bytes: bytes) -> bool:
 # TV SESSION INJECTION (GitHub Secret: TV_SESSION_JSON)
 # ─────────────────────────────────────────────
 
+_SAMESITE_MAP = {
+    "no_restriction": "None",
+    "none": "None",
+    "lax": "Lax",
+    "strict": "Strict",
+    # "unspecified" / anything unknown -> omitted, let the browser default apply
+}
+
+_ALLOWED_COOKIE_KEYS = {
+    "name", "value", "domain", "path", "expires",
+    "httpOnly", "secure", "sameSite", "url", "partitionKey",
+}
+
+
+def _normalize_cookie(raw: dict) -> Optional[dict]:
+    """
+    Convert a browser-exported cookie dict (Chrome / EditThisCookie / Cookie-Editor
+    style, e.g. keys like 'expirationDate', 'hostOnly', 'session', 'storeId')
+    into the exact shape Playwright's add_cookies() accepts.
+
+    Playwright's SetCookieParam only allows:
+        name, value, url, domain, path, expires, httpOnly, secure, sameSite, partitionKey
+    Sending any other key (expirationDate, hostOnly, session, storeId, ...) or an
+    invalid sameSite value (must be exactly "Lax" | "None" | "Strict") makes the
+    underlying protocol call reject the ENTIRE batch, so every cookie silently
+    fails to load and the browser never appears logged in.
+
+    Returns a cleaned cookie dict, or None if the cookie is unusable (no name/value).
+    """
+    if not isinstance(raw, dict):
+        return None
+
+    name = raw.get("name")
+    value = raw.get("value")
+    if not name or value is None:
+        return None
+
+    cookie: dict = {"name": name, "value": str(value)}
+
+    if raw.get("domain"):
+        cookie["domain"] = raw["domain"]
+    if raw.get("path"):
+        cookie["path"] = raw["path"]
+
+    # expirationDate (Chrome export) -> expires (Playwright), both are Unix
+    # epoch seconds as float. Session-only cookies have no expiry -> omit key
+    # entirely (do NOT send expires=-1 for a domain+path cookie; Playwright
+    # only accepts -1 when a "url" is also given for a plain session cookie).
+    expires = raw.get("expires", raw.get("expirationDate"))
+    if expires:
+        try:
+            cookie["expires"] = float(expires)
+        except (TypeError, ValueError):
+            pass
+
+    if "httpOnly" in raw:
+        cookie["httpOnly"] = bool(raw["httpOnly"])
+    if "secure" in raw:
+        cookie["secure"] = bool(raw["secure"])
+
+    same_site_raw = str(raw.get("sameSite", "")).strip().lower()
+    same_site = _SAMESITE_MAP.get(same_site_raw)
+    if same_site:
+        cookie["sameSite"] = same_site
+        # Chrome/TradingView require Secure=true whenever SameSite=None,
+        # otherwise the browser drops the cookie on load.
+        if same_site == "None":
+            cookie["secure"] = True
+
+    # A cookie needs either "url" or both "domain" and "path" — TradingView's
+    # export already includes domain+path, so we don't set "url" here.
+    if "domain" not in cookie or "path" not in cookie:
+        if "url" not in cookie:
+            return None
+
+    return cookie
+
+
 def _inject_tv_session(context: object, session_json: str) -> bool:
     """
     Inject TradingView session (cookies + localStorage) into Playwright context.
 
     session_json: JSON string from TV_SESSION_JSON GitHub Secret.
-    Expected format:
-        {
-          "cookies": [...],           ← list of cookie dicts
-          "origins": [                ← localStorage per origin
-            {
-              "origin": "https://www.tradingview.com",
-              "localStorage": [{"name": "...", "value": "..."}]
-            }
-          ]
-        }
+    Accepts EITHER format:
+        1) A bare array of cookie dicts (what browser cookie-export
+           extensions produce), e.g. [ {"name": ..., "value": ...}, ... ]
+        2) The Playwright storageState-style wrapped object:
+           {
+             "cookies": [...],
+             "origins": [
+               {"origin": "https://www.tradingview.com",
+                "localStorage": [{"name": "...", "value": "..."}]}
+             ]
+           }
 
     Returns True on success, False if session_json is empty/invalid.
     """
@@ -247,26 +326,52 @@ def _inject_tv_session(context: object, session_json: str) -> bool:
         logger.warning("TV_SESSION_JSON is not valid JSON: %s", exc)
         return False
 
-    try:
-        # Add cookies
-        cookies = data.get("cookies", [])
-        if cookies:
-            context.add_cookies(cookies)  # type: ignore[union-attr]
-            logger.info("TV session: injected %d cookies", len(cookies))
+    # Support both a bare cookie array and the wrapped {"cookies": [...]} object
+    if isinstance(data, list):
+        raw_cookies: List[dict] = data
+        origins: List[dict] = []
+    elif isinstance(data, dict):
+        raw_cookies = data.get("cookies", []) or []
+        origins = data.get("origins", []) or []
+    else:
+        logger.warning(
+            "TV_SESSION_JSON has unexpected top-level type: %s", type(data).__name__
+        )
+        return False
 
-        # Add localStorage/sessionStorage
-        origins = data.get("origins", [])
-        if origins:
+    ok = True
+
+    # Add cookies (normalized one-by-one so a single bad cookie can't kill the batch)
+    if raw_cookies:
+        cookies = [c for c in (_normalize_cookie(c) for c in raw_cookies) if c]
+        dropped = len(raw_cookies) - len(cookies)
+        if dropped:
+            logger.warning(
+                "TV session: dropped %d cookie(s) missing name/value/domain", dropped
+            )
+        if cookies:
+            try:
+                context.add_cookies(cookies)  # type: ignore[union-attr]
+                logger.info("TV session: injected %d cookies", len(cookies))
+            except Exception as exc:
+                logger.warning("TV session: add_cookies failed: %s", exc)
+                ok = False
+        else:
+            logger.warning("TV session: no usable cookies after normalization")
+            ok = False
+
+    # Add localStorage/sessionStorage
+    if origins:
+        try:
             context.add_init_script(  # type: ignore[union-attr]
                 _build_storage_init_script(origins)
             )
             logger.info("TV session: injected localStorage for %d origin(s)", len(origins))
+        except Exception as exc:
+            logger.warning("TV session: localStorage injection failed: %s", exc)
+            ok = False
 
-        return True
-
-    except Exception as exc:
-        logger.warning("TV session injection failed: %s", exc)
-        return False
+    return ok
 
 
 def _build_storage_init_script(origins: List[dict]) -> str:
